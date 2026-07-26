@@ -12,11 +12,7 @@
 
 # GSF-nexutils
 
-<sup>part of the **tiny-frameworks** ecosystem</sup>
-
----
-
-`nexutils` is a high-performance, modular collection of essential Go utilities designed for robust microservices, CLI engines, and distributed peer-to-peer applications. Built with a strict **zero external dependency** philosophy, it provides standardized foundations for error handling, thread/process synchronization, in-memory caching, and structured logging.
+GSF-nexutils is a high-performance, modular collection of essential Go utilities designed for robust microservices, CLI engines, and distributed peer-to-peer applications. Built with a strict **zero external dependency** philosophy, it provides standardized foundations for error handling, thread/process synchronization, in-memory caching, and structured logging.
 
 ---
 
@@ -26,7 +22,7 @@
 | --- | --- | --- |
 | **`cache`** | `nexutils/cache` | Thread-safe LRU cache with TTL, background cleanup, and JSON persistence. |
 | **`errors`** | `nexutils/errors` | Domain-driven error handling with codes, call paths, and OS exit code mapping. |
-| **`lockwriter`** | `nexutils/lockwriter` | Process-safe `io.Writer` using `.LOCK` files with PID & timestamp stale detection. |
+| **`lockingwriter`** | `nexutils/lockingwriter` | Process-safe `io.Writer` using `.LOCK` files with PID & timestamp stale detection. |
 | **`logging`** | `nexutils/logging` | `slog`-based structured logger with native `nexutils/errors` support. |
 
 ---
