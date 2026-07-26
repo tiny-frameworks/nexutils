@@ -1,4 +1,16 @@
-## GSF-nexutils
+
+<sup>🌍 **Language:** 🇩🇪 [German →](README.de.md)</sup>
+
+---
+|[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)| |
+|----|----|
+|![GSF-Suite-Logo](logo-gsf.png)| ***GSF-nexutils***<br>A high-performance, modular collection of essential Go utilities designed for robust microservices, CLI engines, and distributed peer-to-peer applications|
+<sup>***GSF*** stands for ***Go Small Frameworks*** — minimalist tools for robust applications.</sup>
+
+---
+
+
+# GSF-nexutils
 
 <sup>part of the **tiny-frameworks** ecosystem</sup>
 
