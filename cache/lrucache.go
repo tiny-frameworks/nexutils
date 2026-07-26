@@ -25,7 +25,8 @@ type LRUCache struct {
 	list     *list.List
 	mu       sync.Mutex
 	ttl      time.Duration
-	stopCh   chan struct{}
+	stopChan chan struct{}
+	stopOnce sync.Once
 }
 
 // New creates a new LRU cache
@@ -35,7 +36,7 @@ func New(capacity int, ttl time.Duration, cleanupInterval time.Duration) *LRUCac
 		cache:    make(map[string]*list.Element),
 		list:     list.New(),
 		ttl:      ttl,
-		stopCh:   make(chan struct{}),
+		stopChan: make(chan struct{}),
 	}
 	go cache.startCleanup(cleanupInterval)
 	return cache
@@ -213,7 +214,7 @@ func (c *LRUCache) startCleanup(interval time.Duration) {
 		select {
 		case <-ticker.C:
 			c.cleanupExpiredEntries()
-		case <-c.stopCh:
+		case <-c.stopChan:
 			return
 		}
 	}
@@ -237,7 +238,11 @@ func (c *LRUCache) cleanupExpiredEntries() {
 
 // StopCleanup ends the cleanup routine.
 func (c *LRUCache) StopCleanup() {
-	close(c.stopCh)
+	c.stopOnce.Do(func() {
+		if c.stopChan != nil {
+			close(c.stopChan)
+		}
+	})
 }
 
 // ---------------------- Helpers ----------------------

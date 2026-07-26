@@ -1,7 +1,7 @@
 // Copyright 2026 Georg Hagn (tiny-frameworks)
 // SPDX-License-Identifier: Apache-2.0
 
-package nexlogger
+package logger
 
 import (
 	"fmt"
@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"codeberg.org/tiny-frameworks/nexutils/lockwriter"
-	"codeberg.org/tiny-frameworks/nexutils/nexerrors"
+	"codeberg.org/tiny-frameworks/nexutils/errors"
+	"codeberg.org/tiny-frameworks/nexutils/lockingwriter"
 )
 
 type LoggerConfig struct {
@@ -55,8 +55,8 @@ func newStandardFileHandler(cfg *LoggerConfig) (slog.Handler, error) {
 	// 1. File-Handler (JSON for better evaluation)
 	logfilePath, err := filepath.Abs(cfg.Filename)
 	if err != nil {
-		return nil, nexerrors.Wrap(
-			nexerrors.WriteError,
+		return nil, errors.Wrap(
+			errors.WriteError,
 			fmt.Sprintf("%s is no valid filepath", cfg.Filename),
 			"nexutils.logger.SetupLogging",
 			err,
@@ -65,8 +65,8 @@ func newStandardFileHandler(cfg *LoggerConfig) (slog.Handler, error) {
 
 	f, err := os.OpenFile(logfilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return nil, nexerrors.Wrap(
-			nexerrors.WriteError,
+		return nil, errors.Wrap(
+			errors.WriteError,
 			fmt.Sprintf("could not open %s", logfilePath),
 			"nexutils.logger.SetupLogging",
 			err,
@@ -77,6 +77,6 @@ func newStandardFileHandler(cfg *LoggerConfig) (slog.Handler, error) {
 
 func newLockingFileHandler(cfg *LoggerConfig) (slog.Handler, error) {
 
-	lockingWriter := lockwriter.NewLockingFileWriter(cfg.Filename, cfg.Timeout, cfg.Expiry)
-	return slog.NewJSONHandler(lockingWriter, &slog.HandlerOptions{Level: cfg.Level}), nil
+	lWriter := lockingwriter.New(cfg.Filename, cfg.Timeout, cfg.Expiry)
+	return slog.NewJSONHandler(lWriter, &slog.HandlerOptions{Level: cfg.Level}), nil
 }

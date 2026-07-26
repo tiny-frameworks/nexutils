@@ -1,7 +1,7 @@
 // Copyright 2026 Georg Hagn (tiny-frameworks)
 // SPDX-License-Identifier: Apache-2.0
 
-package nexlogger
+package logger
 
 import (
 	"encoding/json"
