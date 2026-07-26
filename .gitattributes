@@ -1,0 +1,5 @@
+*.pdf filter=lfs diff=lfs merge=lfs -text lockable
+*.jar filter=lfs diff=lfs merge=lfs -text lockable
+*.odt filter=lfs diff=lfs merge=lfs -text lockable
+*.ott filter=lfs diff=lfs merge=lfs -text lockable
+*.csv filter=lfs diff=lfs merge=lfs -text lockable
