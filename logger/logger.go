@@ -27,14 +27,24 @@ var Logger *slog.Logger = slog.Default()
 
 func SetupLogging(cfg *LoggerConfig) error {
 
-	fileHandler, err := newLogHandler(cfg)
-	if err != nil {
-		return err
+	if cfg == nil {
+		return nil
 	}
-	consoleHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})
 
-	// 3. Combine and put in api
-	multiHandler := slog.NewMultiHandler(consoleHandler, fileHandler)
+	// Default is consolehandler
+	consoleHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})
+	multiHandler := slog.NewMultiHandler(consoleHandler)
+
+	// fileHandler only if cfg.fileName is not nil
+	if cfg.Filename != "" {
+		fileHandler, err := newLogHandler(cfg)
+		multiHandler = slog.NewMultiHandler(consoleHandler, fileHandler)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Combine and put in api
 	Logger = slog.New(multiHandler)
 
 	// Set globally so that third-party libraries can also use slog.

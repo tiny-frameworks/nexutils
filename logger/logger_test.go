@@ -40,7 +40,7 @@ func TestSetupLogging_StandardFile(t *testing.T) {
 	// Dateiinhalt prüfen
 	content, err := os.ReadFile(logFile)
 	if err != nil {
-		t.Fatalf("Could not read log file" in the log: %v", err)
+		t.Fatalf("Could not read log file in the log: %v", err)
 	}
 
 	var entry logEntry
@@ -123,7 +123,7 @@ func TestLogLevelFiltering(t *testing.T) {
 		t.Fatalf("JSON not valid: %v", err)
 	}
 
-	if entry.Message != "Sollte geloggt werden" {
+	if entry.Message != "Should be logged" {
 		t.Errorf("wrong message logged: %s", entry.Message)
 	}
 }
