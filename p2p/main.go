@@ -11,7 +11,7 @@ import (
 
 	stdErrors "errors"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 
 	"codeberg.org/tiny-frameworks/nexutils/errors"
 	"codeberg.org/tiny-frameworks/nexutils/p2p/rpc"
@@ -36,7 +36,10 @@ func main() {
 		}
 
 		// Server-Node für diese eingehende Verbindung erstellen
-		serverConn := transport.NewWSConnection(wsConn)
+		serverConn := &transport.WSConnection{
+			Conn: wsConn,
+		}
+		//serverConn := transport.NewWSConnection(wsConn)
 		serverNode := rpc.NewNode(serverConn, provider, "", logger)
 
 		// Handler auf Server-Seite registrieren

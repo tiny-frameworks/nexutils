@@ -1,318 +1,120 @@
-// Copyright 2026 Georg Hagn
-// SPDX-License-Identifier: Apache-2.0
-
+// node.go
 package rpc
 
 import (
 	"context"
-	"encoding/json"
-	stdErrors "errors"
-	"fmt"
-	"log/slog"
-	"strings"
+	"net/http"
 	"sync"
-	"time"
 
-	"codeberg.org/tiny-frameworks/nexutils/errors"
-	"codeberg.org/tiny-frameworks/nexutils/p2p/transport"
+	"github.com/coder/websocket"
+
+	"codeberg.org/tiny-frameworks/nexutils/logger"
 )
 
-type HandlerFunc func(ctx context.Context, params json.RawMessage) (any, error)
-
 type Node struct {
-	connMu sync.RWMutex
-	conn   transport.Connection
+	opts       Options
+	router     *Router
+	httpServer *http.Server
 
-	handlers map[string]HandlerFunc
 	mu       sync.RWMutex
+	peers    map[*Peer]bool
+	requests chan clientRequest
 
-	pending   map[string]pendingRequest
-	pendingMu sync.Mutex
-	nextID    uint64
-
-	dialAddr string
-	provider *transport.WSProvider
-
-	logger *slog.Logger
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
-type pendingRequest struct {
-	done chan Response
-}
+func NewNode(opts Options) *Node {
+	opts.setDefaults()
 
-func NewNode(
-	conn transport.Connection,
-	provider *transport.WSProvider,
-	dialAddr string,
-	loggerInstance *slog.Logger,
-) *Node {
-	if loggerInstance == nil {
-		loggerInstance = slog.Default()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	n := &Node{
+		opts:     opts,
+		router:   newRouter(),
+		peers:    make(map[*Peer]bool),
+		requests: make(chan clientRequest, 64),
+		ctx:      ctx,
+		cancel:   cancel,
 	}
 
-	return &Node{
-		conn:     conn,
-		handlers: make(map[string]HandlerFunc),
-		pending:  make(map[string]pendingRequest),
-		provider: provider,
-		dialAddr: dialAddr,
-		logger:   loggerInstance.With("component", "p2p.node"),
-	}
+	return n
 }
 
-func (node *Node) Register(method string, h HandlerFunc) {
-	node.mu.Lock()
-	defer node.mu.Unlock()
-	node.handlers[method] = h
+func (n *Node) RegisterHandler(method string, h JsonRPChandler) {
+	n.router.RegisterHandler(method, h)
 }
 
-// Call sendet einen Request und blockiert, bis die Antwort eintrifft.
-func (node *Node) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
-	node.connMu.RLock()
-	currentConn := node.conn
-	node.connMu.RUnlock()
+func (n *Node) Start() error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/ws", n.handleWS)
 
-	if currentConn == nil {
-		return nil, NewRPCError(ErrCodeInternalError, "The connection is currently being re-established.")
+	n.httpServer = &http.Server{
+		Addr:    n.opts.Addr,
+		Handler: mux,
 	}
 
-	node.pendingMu.Lock()
-	node.nextID++
-	idVal := node.nextID
-	idJSON, _ := json.Marshal(idVal)
+	go n.router.dispatchLoop(n.ctx, n.requests)
 
-	ch := make(chan Response, 1)
-	idStr := fmt.Sprintf("%d", idVal)
-	node.pending[idStr] = pendingRequest{done: ch}
-	node.pendingMu.Unlock()
+	logger.Logger.Info("RPC Node listening for WebSocket connections", "addr", n.opts.Addr)
+	return n.httpServer.ListenAndServe()
+}
 
-	defer func() {
-		node.pendingMu.Lock()
-		delete(node.pending, idStr)
-		node.pendingMu.Unlock()
-	}()
+func (n *Node) Stop() error {
+	n.cancel()
 
-	pBytes, err := json.Marshal(params)
+	n.mu.Lock()
+	for p := range n.peers {
+		p.Close()
+	}
+	n.mu.Unlock()
+
+	ctxShutdown, cancel := context.WithTimeout(context.Background(), n.opts.ShutdownDelay)
+	defer cancel()
+
+	return n.httpServer.Shutdown(ctxShutdown)
+}
+
+func (n *Node) ConnectToPeer(targetURL string) (*Peer, error) {
+	conn, _, err := websocket.Dial(n.ctx, targetURL, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	req := Request{
-		JSONRPC: JRPCVERSION,
-		Method:  method,
-		Params:  pBytes,
-		ID:      idJSON,
-	}
+	peer := newPeer(n.ctx, conn, RoleOutbound, n)
+	n.registerPeer(peer)
+	peer.Start()
 
-	data, err := json.Marshal(req)
+	logger.Logger.Info("Connected to remote RPC peer", "target", targetURL)
+	return peer, nil
+}
+
+func (n *Node) handleWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		InsecureSkipVerify: true,
+	})
 	if err != nil {
-		return nil, err
-	}
-
-	if err := currentConn.Send(ctx, data); err != nil {
-		return nil, err
-	}
-
-	select {
-	case resp := <-ch:
-		if resp.Error != nil {
-			return nil, resp.Error
-		}
-		return resp.Result, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
-
-// Notify sendet eine Benachrichtigung ohne erwartete Antwort.
-func (node *Node) Notify(ctx context.Context, method string, params any) error {
-	node.connMu.RLock()
-	currentConn := node.conn
-	node.connMu.RUnlock()
-
-	if currentConn == nil {
-		return NewRPCError(ErrCodeInternalError, "Notification failed: Reconnecting")
-	}
-
-	pBytes, err := json.Marshal(params)
-	if err != nil {
-		return err
-	}
-
-	req := Request{
-		JSONRPC: JRPCVERSION,
-		Method:  method,
-		Params:  pBytes,
-	}
-
-	data, err := json.Marshal(req)
-	if err != nil {
-		return err
-	}
-
-	return currentConn.Send(ctx, data)
-}
-
-func (node *Node) Listen(ctx context.Context) error {
-	for {
-		node.connMu.RLock()
-		currentConn := node.conn
-		node.connMu.RUnlock()
-
-		if currentConn == nil {
-			if node.dialAddr == "" {
-				return stdErrors.New("Connection lost and no reconnect address available")
-			}
-
-			node.logger.Info("Connection lost. Trying to reconnect...")
-			if err := node.attemptReconnect(ctx); err != nil {
-				return err
-			}
-			continue
-		}
-
-		data, err := currentConn.Receive(ctx)
-		if err != nil {
-			node.logger.Error("Network error during receive", "error", err)
-
-			node.connMu.Lock()
-			node.conn = nil
-			node.connMu.Unlock()
-
-			node.cleanupPendingRequests("Connection lost")
-			continue
-		}
-
-		go node.handleIncoming(ctx, data)
-	}
-}
-
-func (node *Node) attemptReconnect(ctx context.Context) error {
-	backoff := 1 * time.Second
-	maxBackoff := 30 * time.Second
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			node.logger.Info("Attempting reconnect", "dialAddr", node.dialAddr)
-			newConn, err := node.provider.Dial(ctx, node.dialAddr)
-			if err == nil {
-				node.logger.Info("Reconnect successful!")
-				node.connMu.Lock()
-				node.conn = newConn
-				node.connMu.Unlock()
-				return nil
-			}
-
-			node.logger.Error("Reconnect failed, retrying...", "error", err, "backoff", backoff)
-
-			time.Sleep(backoff)
-			backoff *= 2
-			if backoff > maxBackoff {
-				backoff = maxBackoff
-			}
-		}
-	}
-}
-
-type incomingMessage struct {
-	JSONRPC string          `json:"jsonrpc"`
-	Method  string          `json:"method,omitempty"`
-	ID      json.RawMessage `json:"id,omitempty"`
-}
-
-func (node *Node) handleIncoming(ctx context.Context, data []byte) {
-	var msg incomingMessage
-	if err := json.Unmarshal(data, &msg); err != nil {
-		node.logger.Error("Failed to parse incoming message", "error", err)
+		logger.Logger.Error("Failed to accept websocket connection", "err", err)
 		return
 	}
 
-	if msg.Method != "" {
-		var req Request
-		if err := json.Unmarshal(data, &req); err == nil {
-			node.processRequest(ctx, req)
-		} else {
-			node.logger.Error("Failed to unmarshal RPC request", "error", err)
-		}
-		return
-	}
-
-	var resp Response
-	if err := json.Unmarshal(data, &resp); err == nil {
-		node.processResponse(resp)
-	} else {
-		node.logger.Error("Failed to unmarshal RPC response", "error", err)
-	}
+	peer := newPeer(n.ctx, conn, RoleInbound, n)
+	n.registerPeer(peer)
+	peer.Start()
 }
 
-func (node *Node) processRequest(ctx context.Context, req Request) {
-	node.mu.RLock()
-	handler, ok := node.handlers[req.Method]
-	node.mu.RUnlock()
-
-	var resp Response
-	resp.JSONRPC = JRPCVERSION
-	resp.ID = req.ID
-
-	if !ok {
-		resp.Error = NewRPCError(ErrCodeMethodNotFound, req.Method)
-		node.logger.Warn("Method not found", "method", req.Method)
-	} else {
-		result, err := handler(ctx, req.Params)
-		if err != nil {
-			var nexErr *errors.Error
-			if stdErrors.As(err, &nexErr) {
-				// 1. JSON-RPC-Protokoll-Ebene: Standard-Code (-32603) und Nachricht
-				rpcErr := NewRPCError(ErrCodeInternalError, nexErr.Message)
-
-				// 2. Domänen-Ebene: Der GESAMTE nexutils.Error (inkl. String-Code, Path etc.) wandert in 'data'
-				if dataBytes, marshalErr := json.Marshal(nexErr); marshalErr == nil {
-					rpcErr.Data = dataBytes
-				}
-
-				resp.Error = rpcErr
-			} else {
-				// Fallback für einfache Go-Standardfehler
-				resp.Error = NewRPCError(ErrCodeInternalError, err.Error())
-			}
-			node.logger.Error("Handler execution failed", "method", req.Method, "error", err)
-		} else {
-			resBytes, _ := json.Marshal(result)
-			resp.Result = resBytes
-		}
-	}
-
-	if req.ID != nil && string(req.ID) != "null" {
-		respBytes, _ := json.Marshal(resp)
-		_ = node.conn.Send(ctx, respBytes)
-	} else {
-		node.logger.Info("Notification processed", "method", req.Method)
-	}
+func (n *Node) registerPeer(p *Peer) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.peers[p] = true
 }
 
-func (node *Node) processResponse(resp Response) {
-	idStr := strings.Trim(string(resp.ID), `"`)
-
-	node.pendingMu.Lock()
-	req, ok := node.pending[idStr]
-	node.pendingMu.Unlock()
-
-	if ok {
-		req.done <- resp
-	}
+func (n *Node) unregisterPeer(p *Peer) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	delete(n.peers, p)
 }
 
-func (node *Node) cleanupPendingRequests(reason string) {
-	node.pendingMu.Lock()
-	defer node.pendingMu.Unlock()
-	for id, req := range node.pending {
-		req.done <- Response{
-			ID:    json.RawMessage(id),
-			Error: NewRPCError(ErrCodeInternalError, reason),
-		}
-		delete(node.pending, id)
-	}
+func (n *Node) SetAuthenticator(auth UserAuthenticator) {
+	n.router.SetAuthenticator(auth)
 }

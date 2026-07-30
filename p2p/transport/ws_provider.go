@@ -5,6 +5,7 @@ package transport
 
 import (
 	"context"
+	stdErrors "errors"
 	"log/slog"
 	"net/http"
 
