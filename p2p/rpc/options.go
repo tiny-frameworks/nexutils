@@ -1,3 +1,6 @@
+// Copyright 2026 Georg Hagn
+// SPDX-License-Identifier: Apache-2.0
+
 package rpc
 
 import "time"

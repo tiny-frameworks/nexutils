@@ -1,3 +1,6 @@
+// Copyright 2026 Georg Hagn
+// SPDX-License-Identifier: Apache-2.0
+
 package rpc
 
 import (
@@ -5,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"sync"
-
 	"time"
 
 	"codeberg.org/tiny-frameworks/nexutils/logger"
@@ -44,7 +46,7 @@ func newRouter() *Router {
 	return r
 }
 
-// SetAuthenticator erlaubt das Einschleusen einer beliebigen User-Verwaltung
+// SetAuthenticator erlaubt das injizieren einer beliebigen User-Verwaltung
 func (r *Router) SetAuthenticator(auth UserAuthenticator) {
 	if auth != nil {
 		r.authenticator = auth
@@ -119,7 +121,7 @@ type AuthResult struct {
 
 func (r *Router) handleAuth(p *Peer, req JsonRPCrequest) (any, *JsonRPCerror) {
 	var params AuthParams
-	if err := json.Unmarshal(req.Params, &params); err != nil {
+	if err := req.UnmarshalParams(&params); err != nil {
 		return nil, &JsonRPCerror{Code: InvalidParams, Message: StdError[InvalidParams]}
 	}
 

@@ -1,4 +1,6 @@
-// node.go
+// Copyright 2026 Georg Hagn
+// SPDX-License-Identifier: Apache-2.0
+
 package rpc
 
 import (
@@ -81,7 +83,7 @@ func (n *Node) ConnectToPeer(targetURL string) (*Peer, error) {
 		return nil, err
 	}
 
-	peer := newPeer(n.ctx, conn, RoleOutbound, n)
+	peer := newPeer(n.ctx, conn, RoleOutbound, n, targetURL)
 	n.registerPeer(peer)
 	peer.Start()
 
@@ -90,6 +92,9 @@ func (n *Node) ConnectToPeer(targetURL string) (*Peer, error) {
 }
 
 func (n *Node) handleWS(w http.ResponseWriter, r *http.Request) {
+	// RemoteAddr aus dem HTTP Request merken
+	clientAddr := r.RemoteAddr
+
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		InsecureSkipVerify: true,
 	})
@@ -98,7 +103,7 @@ func (n *Node) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	peer := newPeer(n.ctx, conn, RoleInbound, n)
+	peer := newPeer(n.ctx, conn, RoleInbound, n, clientAddr)
 	n.registerPeer(peer)
 	peer.Start()
 }
@@ -117,4 +122,63 @@ func (n *Node) unregisterPeer(p *Peer) {
 
 func (n *Node) SetAuthenticator(auth UserAuthenticator) {
 	n.router.SetAuthenticator(auth)
+}
+
+// ConnectWithAutoReconnect erstellt einen ManagedClient, der sich im Hintergrund
+// autonom verbindet, authentifiziert und Reconnects verwaltet.
+func (n *Node) ConnectWithAutoReconnect(targetURL string, cfg ReconnectConfig) *ManagedClient {
+	client := NewManagedClient(n, targetURL, cfg)
+	client.Start() // Startet den synchronisierenden lifecycleLoop im Hintergrund
+	return client
+}
+
+// Broadcast Funktionalität
+// PeerFilter ist eine Funktion, die entscheidet, ob ein Peer ein Signal erhalten soll.
+type PeerFilter func(p *Peer) bool
+
+// BroadcastFilter schickt ein Notification-Signal an alle Peers, auf die der Filter zutrifft.
+func (n *Node) BroadcastFilter(method string, params any, filter PeerFilter) {
+	n.mu.RLock()
+	// Wir machen einen Schnappschuss der aktuellen Peers, um den Mutex schnell freizugeben
+	activePeers := make([]*Peer, 0, len(n.peers))
+	for p := range n.peers {
+		activePeers = append(activePeers, p)
+	}
+	n.mu.RUnlock()
+
+	// Über die Liste iterieren und filtern
+	for _, p := range activePeers {
+		// Falls ein Filter übergeben wurde und er 'false' liefert -> überspringen
+		if filter != nil && !filter(p) {
+			continue
+		}
+
+		if err := p.Notify(method, params); err != nil {
+			logger.Logger.Warn("Failed to send broadcast notify to peer", "peer", p.ID, "err", err)
+		}
+	}
+}
+
+// Broadcast schickt ein Notification-Signal an ALLE verbundenen Peers.
+func (n *Node) Broadcast(method string, params any) {
+	n.BroadcastFilter(method, params, nil)
+}
+
+// BroadcastAuthorized schickt ein Notification-Signal NUR an authentifizierte Peers.
+func (n *Node) BroadcastAuthorized(method string, params any) {
+	n.BroadcastFilter(method, params, func(p *Peer) bool {
+		return p.IsAuthorized()
+	})
+}
+
+// BroadcastToUsers schickt ein Notification-Signal an eine spezifische Liste von Usernamen.
+func (n *Node) BroadcastToUsers(method string, params any, usernames []string) {
+	userMap := make(map[string]bool, len(usernames))
+	for _, u := range usernames {
+		userMap[u] = true
+	}
+
+	n.BroadcastFilter(method, params, func(p *Peer) bool {
+		return p.IsAuthorized() && userMap[p.Username()]
+	})
 }

@@ -1,4 +1,6 @@
-// protocol
+// Copyright 2026 Georg Hagn
+// SPDX-License-Identifier: Apache-2.0
+
 package rpc
 
 import (
@@ -52,6 +54,7 @@ type JsonRPCresponse struct {
 	JSONRPC string          `json:"jsonrpc"`
 	Result  any             `json:"result,omitempty"`
 	Error   *JsonRPCerror   `json:"error,omitempty"`
+	Method  string          `json:"method,omitempty"`
 	ID      json.RawMessage `json:"id,omitempty"`
 }
 
@@ -88,4 +91,18 @@ type DummyAuthenticator struct{}
 func (d *DummyAuthenticator) Authenticate(ctx context.Context, username, password string) bool {
 	// Standard-Verhalten beibehalten, solange kein echter Provider gesetzt ist
 	return username == "georg" && password == "secret"
+}
+
+// IsResponse prüft, ob es sich um eine JSON-RPC Antwort auf einen eigenen Request handelt
+func (req *JsonRPCrequest) IsResponse() bool {
+	return req.Method == "" && req.ID != nil
+}
+
+// UnmarshalParams ist eine bequeme Hilfsmethode, um die JSON-RPC Parameter
+// direkt in ein Ziel-Struct oder eine Variable zu parsen.
+func (req *JsonRPCrequest) UnmarshalParams(v any) error {
+	if len(req.Params) == 0 {
+		return nil
+	}
+	return json.Unmarshal(req.Params, v)
 }
