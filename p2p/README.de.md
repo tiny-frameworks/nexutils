@@ -1,11 +1,11 @@
 
-# nexutils/rpc
+# nexutils/p2p
 
 the *p2p module*, part of **GSF-nexutils**, member of the **tiny-frameworks** family
 
 ---
 
-`nexutils/rpc` ist ein leichtgewichtiges, performantes **JSON-RPC 2.0 über WebSocket** Paket für Go. Es basiert auf [`github.com/coder/websocket`](https://www.google.com/search?q=https://codeberg.org/coder/websocket) mit automatischem Session-Management, Heartbeats und resilienter Client-Steuerung. Es ist speziell für den Einsatz in **Peer-to-Peer (P2P)**-Szenarien und verteilten Systemen konzipiert.
+`nexutils/p2p` ist ein leichtgewichtiges, performantes **JSON-RPC 2.0 über WebSocket** Paket für Go. Es basiert auf [`github.com/coder/websocket`](https://www.google.com/search?q=https://codeberg.org/coder/websocket) mit automatischem Session-Management, Heartbeats und resilienter Client-Steuerung. Es ist speziell für den Einsatz in **Peer-to-Peer (P2P)**-Szenarien und verteilten Systemen konzipiert.
 
 ---
 
