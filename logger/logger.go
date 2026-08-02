@@ -14,12 +14,23 @@ import (
 	"codeberg.org/tiny-frameworks/nexutils/lockingwriter"
 )
 
+// Eigenes Alias für slog.Level
+// und Re-export der gewohnten Log-Level als logger-Konstanten
+type Level = slog.Level
+
+const (
+	LevelDebug Level = slog.LevelDebug
+	LevelInfo  Level = slog.LevelInfo
+	LevelWarn  Level = slog.LevelWarn
+	LevelError Level = slog.LevelError
+)
+
 type LoggerConfig struct {
 	Filename   string
 	Timeout    time.Duration
 	Expiry     time.Duration
 	UseLocking bool
-	Level      slog.Level
+	Level      Level
 }
 
 // Global anchor for all nexgate components

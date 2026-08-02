@@ -8,7 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"log/slog"
+
+	//"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -30,7 +31,7 @@ func main() {
 	lgrCfg := &logger.LoggerConfig{
 		Filename:   "./secret.log",
 		UseLocking: false,
-		Level:      slog.LevelInfo,
+		Level:      logger.LevelInfo,
 	}
 	if err := logger.SetupLogging(lgrCfg); err != nil {
 		log.Fatalf("Logger-Fehler: %v", err)

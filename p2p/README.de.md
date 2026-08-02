@@ -1,19 +1,23 @@
 
 # nexutils/rpc
-<sup>the *p2p module*, part of **GSF-nexutils**, member of the **tiny-frameworks** family</sup>
+
+the *p2p module*, part of **GSF-nexutils**, member of the **tiny-frameworks** family
 
 ---
 
-`nexutils/rpc` ist ein leichtgewichtiges, performantes **JSON-RPC 2.0 über WebSocket** Paket für Go. Es basiert auf [`github.com/coder/websocket`](https://www.google.com/search?q=https://codeberg.org/coder/websocket) und ist speziell für den Einsatz in **Peer-to-Peer (P2P)**-Szenarien und verteilten Systemen konzipiert.
+`nexutils/rpc` ist ein leichtgewichtiges, performantes **JSON-RPC 2.0 über WebSocket** Paket für Go. Es basiert auf [`github.com/coder/websocket`](https://www.google.com/search?q=https://codeberg.org/coder/websocket) mit automatischem Session-Management, Heartbeats und resilienter Client-Steuerung. Es ist speziell für den Einsatz in **Peer-to-Peer (P2P)**-Szenarien und verteilten Systemen konzipiert.
 
 ---
 
 ## Key Features
 
 * **Echte Peer-Symmetrie:** Jeder Knoten (`Node`) kann zeitgleich als Server (eingehende Verbindungen) und als Client (ausgehende Verbindungen) agieren.
-* **Kein TLS-Ballast im Code:** Entwickelt für gesicherte Umgebungen oder den Betrieb hinter Proxies (z. B. **Caddy**), die TLS-Terminierung deutlich effizienter handhaben.
+* **Managed Client Architecture:** Entkoppelter, zustandsbasierter Auto-Reconnect mit konfigurierbarem Exponential Backoff & Jitter.
+* **Automatische Re-Authentifizierung:** Nahtloser Fallback-Mechanismus von Session-Tokens auf Zugangsdaten bei Server-Neustarts.
+* **Typensicheres JSON-RPC 2.0:** Volle Unterstützung für synchrone Methodenaufrufe (`Call`) und asynchrone Einweg-Events (`Notify`).
+* **Context-Driven:** Komplette Cancellation-Support und strikte Request-Timeouts gegen Goroutine-Leaks.
 * **Heartbeat & Time-Sync:** Integrierter Liveness-Check von der Client-Rolle aus. Der Empfänger antwortet automatisch mit `pong` und einem präzisen UTC-Timestamp.
-* **Session-Token Authentication:** Integriertes Auth-System für Logins (Benutzername/Passwort) und nahtlose Reconnects via Session-Tokens.
+* **Kein TLS-Ballast im Code:** Entwickelt für gesicherte Umgebungen oder den Betrieb hinter Proxies (z. B. **Caddy**), die TLS-Terminierung deutlich effizienter handhaben.
 * **Entkoppelte User-Verwaltung:** Über das `UserAuthenticator`-Interface kann jede beliebige Datenbank, LDAP oder Custom-Auth-Logik angedockt werden.
 * **Strukturierte Fehler:** Vollständige Integration mit `nexutils/errors` (Fehler-Details werden im `data`-Feld von JSON-RPC übertragen).
 
@@ -23,15 +27,16 @@
 
 ### 1. Die Komponenten
 
-Das Paket teilt sich in fünf klare Zuständigkeiten auf:
+Das Paket teilt sich in folgende Kernzuständigkeiten auf:
 
-| Datei | Aufgabe |
+| Komponente / Datei | Aufgabe |
 | --- | --- |
-| **`node.go`** | Haupt-Lifecycle-Manager. Startet den HTTP/WebSocket-Listener, stoppt das System und stellt ausgehende Verbindungen her (`ConnectToPeer`). |
-| **`peer.go`** | Repräsentiert eine aktive WebSocket-Verbindung. Steuert Read/Write-Loops, hält den Auth-State und führt den Heartbeat aus. |
-| **`router.go`** | Registriert RPC-Methoden (`RegisterHandler`), verwaltet die Session-Tokens und verteilt eingehende Anfragen (`dispatchLoop`). |
+| **`node.go` (`Node`)** | Haupt-Lifecycle-Manager. Startet/stoppt den HTTP/WebSocket-Listener, verwaltet Handler-Registrierungen und stellt ausgehende Verbindungen her. |
+| **`peer.go` (`Peer`)** | Bipolare WebSocket-Verbindung zu einem Remote-Knoten. Steuert Read/Write-Loops, Frame-Handling, Pending-Request-Matching, Auth-State und Heartbeats. |
+| **`client.go` (`ManagedClient`)** | Resilienter Auto-Reconnect Daemon mit integrierter State-Machine (`Connecting` -> `Authenticating` -> `Ready`) für dauerhafte Client-Verbindungen. |
+| **`router.go`** | Registriert RPC-Methoden (`RegisterHandler`), verwaltet Session-Tokens und verteilt eingehende Anfragen (`dispatchLoop`).|
 | **`protocol.go`** | JSON-RPC 2.0 Spezifikation (Requests, Responses, Errors) und Mapper für `nexutils/errors`. |
-| **`options.go`** | Konfiguration für Timeouts, Ports und Heartbeat-Intervalle. |
+| **`options.go`** | Konfiguration für Timeouts, Ports, Reconnects und Heartbeat-Intervalle. |
 
 ### 2. Peer-to-Peer (P2P) Prinzip
 
@@ -42,6 +47,7 @@ Nachdem der initiale WebSocket-Handshake via HTTP GET vollzogen ist, schaltet di
 (Port :8080 / Server)                           (Port :8081 / Server)
           ▲                                               │
           │────── ConnectToPeer("ws://nodeA/ws") ─────────│  (RoleOutbound)
+          │  oder ConnectWithAutoReconnect(...)           │
           │                                               ▼
           ├─────────────── Request: "auth" ───────────────┤
           ├─────────────── Request: "heartbeat" ──────────┤ (Ticker)
@@ -106,7 +112,74 @@ func main() {
 
 ---
 
-### 2. Eigene User-Verwaltung einbinden (`UserAuthenticator`)
+### 2. Managed Client mit Auto-Reconnect (Resilient)
+
+Für langlebige Client-Verbindungen, die Netzausfälle und Neustarts des Gegenübers autonom überstehen müssen:
+
+```go
+package main
+
+import (
+	"context"
+	"time"
+
+	"codeberg.org/tiny-frameworks/nexutils/rpc"
+)
+
+func main() {
+	node := rpc.NewNode(rpc.Options{
+		HeartbeatInterval: 5 * time.Second,
+	})
+	go node.Start()
+	defer node.Stop()
+
+	// Resilienter Client mit Auto-Reconnect & Re-Auth
+	client := node.ConnectWithAutoReconnect("ws://127.0.0.1:8080/ws", rpc.ReconnectConfig{
+		InitialInterval: 1 * time.Second,
+		MaxInterval:     10 * time.Second,
+		MaxRetries:      10,
+	})
+	client.SetCredentials("georg", "secret")
+	defer client.Close()
+
+	// Synchroner Call mit explizitem Timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	var response string
+	if err := client.Call(ctx, "payment.process", "Order_123", &response); err != nil {
+		// Fehlerbehandlung (z.B. "client connection is not ready")
+		return
+	}
+}
+
+```
+
+---
+
+### 3. Direct Peer Connection (Statisch)
+
+Für kontrollierte Ad-hoc-Verbindungen ohne Hintergrund-Management:
+
+```go
+peer, err := node.ConnectToPeer("ws://127.0.0.1:8080/ws")
+if err != nil {
+	// Fehler beim Verbindungsaufbau
+}
+
+ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+defer cancel()
+
+var result string
+if err := peer.Call(ctx, "ping", nil, &result); err != nil {
+	// Statischer Aufruf fehlgeschlagen
+}
+
+```
+
+---
+
+### 4. Eigene User-Verwaltung einbinden (`UserAuthenticator`)
 
 Standardmäßig nutzt das System einen Dummy-Check (`georg` / `secret`). Du kannst jederzeit deine eigene Datenbank-Logik andocken:
 
@@ -134,7 +207,7 @@ func main() {
 
 ---
 
-### 3. Geschützte Methoden schreiben
+### 5. Geschützte Methoden schreiben
 
 Im Handler kann einfach geprüft werden, ob der anfragende Peer authentifiziert ist:
 
@@ -161,6 +234,7 @@ Das Protokoll unterstützt Token-basierte Sessions. Dadurch müssen bei einem Ve
 ### 1. Erstmaliges Login (Username/Password)
 
 * **Request:**
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -171,8 +245,8 @@ Das Protokoll unterstützt Token-basierte Sessions. Dadurch müssen bei einem Ve
 
 ```
 
-
 * **Response:**
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -186,11 +260,10 @@ Das Protokoll unterstützt Token-basierte Sessions. Dadurch müssen bei einem Ve
 
 ```
 
-
-
-### 2. Reconnect nach Verbindungsabbruch (Token)
+### 2. Reconnect nach Verbindungsabbruch (Token / Auto-Re-Auth)
 
 * **Request:**
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -201,8 +274,8 @@ Das Protokoll unterstützt Token-basierte Sessions. Dadurch müssen bei einem Ve
 
 ```
 
-
 * **Response:**
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -216,7 +289,7 @@ Das Protokoll unterstützt Token-basierte Sessions. Dadurch müssen bei einem Ve
 
 ```
 
-
+*(Sollte der Server neu gestartet sein und den Token nicht mehr kennen, führt der `ManagedClient` im Hintergrund automatisch einen Fallback auf die hinterlegten Zugangsdaten durch).*
 
 ---
 
@@ -226,6 +299,7 @@ Der Node in der **Client-Rolle** (Outbound Peer) sendet automatisch im konfiguri
 
 * **Outbound Peer sendet:** `{"jsonrpc": "2.0", "method": "heartbeat", "id": 1690000000}`
 * **Inbound Peer antwortet:**
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -237,8 +311,6 @@ Der Node in der **Client-Rolle** (Outbound Peer) sendet automatisch im konfiguri
 }
 
 ```
-
-
 
 Dies dient zeitgleich als **Liveness-Check** und erlaubt es dem Client, seine Uhrzeit mit dem Server zu synchronisieren (spart eine extra `getTime`-Methode).
 
@@ -255,16 +327,15 @@ go test -v ./...
 
 ---
 
-
----
-
 ## Organizational & Standards
 
 * **Copyright:** © 2026 Georg Hagn.
-* **Namespace:** `codeberg.org/tiny-frameworks/nexutils/logging`
+
+* **Namespace:** `codeberg.org/tiny-frameworks/nexutils/rpc`
+
 * **License:** Apache License, Version 2.0.
 
-*GSF-nexutils/logging is an independent open-source project and is not affiliated with any corporation of a similar name.*
+*GSF-nexutils/rpc is an independent open-source project and is not affiliated with any corporation of a similar name.*
 
 ---
 
@@ -273,6 +344,4 @@ go test -v ./...
 If you have questions or feedback, feel free to reach out:
 
 📧 *georghagn [at] tiny-frameworks.io*
-
----
 
