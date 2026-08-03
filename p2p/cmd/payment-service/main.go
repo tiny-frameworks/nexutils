@@ -17,28 +17,29 @@ import (
 )
 
 func main() {
-	// Graceful Shutdown Signal-Handling aktivieren
+	// SetUp
+	// Graceful Shutdown: activate signal-handling
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Logger initialisieren
+	// initialize logger
 	if err := logger.SetupLogging(nil); err != nil {
-		log.Fatalf("Logger-Fehler: %v", err)
+		log.Fatalf("Logger-Error: %v", err)
 	}
 
-	// Logger mit Kontext anreichern via .With()
+	// Enriching the logger with context via .With()
 	log := logger.Logger.With("component", "payment-service", "role", "server")
 	log.Info("=== Starte nexutils/p2p payment-service Demo ===")
 
 	// -------------------------------------------------------------------------
-	// Knoten payment-service (Server-Rolle)
+	// Node payment-service (Server-Rolle)
 	// -------------------------------------------------------------------------
 	paymentService := rpc.NewNode(rpc.Options{
 		Addr:              "127.0.0.1:8080",
 		HeartbeatInterval: 5 * time.Second,
 	})
 
-	// Anwendungs-Handler auf Node paymentService registrieren
+	// Register application handler on Node paymentService
 	paymentService.RegisterHandler("payment.process", func(p *rpc.Peer, req rpc.JsonRPCrequest) (any, *rpc.JsonRPCerror) {
 		var orderID string
 
@@ -46,26 +47,26 @@ func main() {
 		successID := fmt.Sprintf("Payment_Success_ID: %s", orderID)
 		log.Info("💳 Process payment", "orderID", orderID, "peer", p.RemoteAddr())
 
-		// simuliere success
+		// simulate success
 		return successID, nil
 	})
 
-	// Node paymentService im Hintergrund-Thread starten
+	// Start the paymentService node in a background thread.
 	go func() {
 		log.Info("Listen for incoming P2P connections...", "addr", "127.0.0.1:8080")
 		if err := paymentService.Start(); err != nil {
-			log.Error("Node 'paymentService' gestoppt", "err", err)
+			log.Error("Node 'paymentService' stoppt", "err", err)
 		}
 	}()
 
 	// -------------------------------------------------------------------------
-	// Broadcast-Schleife im paymentService (Server-Rolle)
+	// Broadcast-Loop in paymentService (Server-Rolle)
 	// -------------------------------------------------------------------------
 	go func() {
-		// Logger für die Hintergrund-Aufgabe
+		//Logger for the background task
 		bcastLog := log.With("task", "broadcast-emitter")
 
-		// Alle 15 Sekunden eine System-Alert-Nachricht an alle schicken
+		// Send a system alert message to everyone every 15 seconds.
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 
@@ -74,24 +75,24 @@ func main() {
 		for {
 			select {
 			case <-ctx.Done():
-				// Stoppt die Schleife, wenn der paymentService herunterfährt
+				// Stop the loop when the paymentService shuts down.
 				return
 
 			case <-ticker.C:
 				counter++
-				alertMsg := fmt.Sprintf("System-Wartung in %d Minuten! (Broadcast #%d)", 60-counter, counter)
+				alertMsg := fmt.Sprintf("System maintenance in %d minutes! (Broadcast #%d)", 60-counter, counter)
 
-				bcastLog.Info("📢 Sende BroadcastAuthorized an alle authentifizierten Peers...", "msg", alertMsg)
+				bcastLog.Info("📢 Send BroadcastAuthorized to all authenticated peers....", "msg", alertMsg)
 
-				// Nur an Peers senden, die den Auth-Handshake ("georg") erfolgreich absolviert haben!
+				// Send only to peers that have successfully completed the auth handshake ("georg")!
 				paymentService.BroadcastAuthorized("systemAlert", alertMsg)
 			}
 		}
 	}()
 
-	// Blockieren, bis Strg+C (SIGINT) oder SIGTERM gesendet wird
-	log.Info("Warte auf SIGINT/SIGTERM (mainCtx)...")
+	// Block until Ctrl+C (SIGINT) or SIGTERM is sent
+	log.Info("Wait for SIGINT/SIGTERM (mainCtx)...")
 	<-ctx.Done()
-	log.Info("Signal empfangen! Grund:", "err", ctx.Err())
+	log.Info("Signal received! Reason:", "err", ctx.Err())
 
 }

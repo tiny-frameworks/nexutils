@@ -14,8 +14,8 @@ import (
 	"codeberg.org/tiny-frameworks/nexutils/lockingwriter"
 )
 
-// Eigenes Alias für slog.Level
-// und Re-export der gewohnten Log-Level als logger-Konstanten
+// Custom alias for slog.Level
+// and re-export of the familiar log levels as logger constants
 type Level = slog.Level
 
 const (

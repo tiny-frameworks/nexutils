@@ -1,7 +1,6 @@
 
-# nexutils/p2p
-
-the *p2p module*, part of **GSF-nexutils**, member of the **tiny-frameworks** family
+## nexutils/p2p
+<sup>the *p2p module*, part of **GSF-nexutils**, member of the **tiny-frameworks** family</sup>
 
 ---
 
@@ -14,11 +13,11 @@ for **Peer-to-Peer (P2P)** scenarios and distributed systems.
 
 ## Key Features
 
-* **True Peer Symmetry:** Every node (`Node`) can act simultaneously as a server (incoming connections) and as a client (outgoing connections)[cite: 1, 2].
-* **Managed Client Architecture:** Decoupled, stateful auto-reconnect daemon featuring configurable Exponential Backoff & Jitter[cite: 2].
-* **Automatic Re-Authentication:** Seamless fallback mechanism from session tokens to credentials upon server restarts[cite: 2].
-* **Type-Safe JSON-RPC 2.0:** Full support for synchronous method calls (`Call`) and asynchronous one-way events (`Notify`)[cite: 2].
-* **Context-Driven:** Full cancellation support and strict request timeouts to prevent goroutine leaks[cite: 2].
+* **True Peer Symmetry:** Every node (`Node`) can act simultaneously as a server (incoming connections) and as a client (outgoing connections).
+* **Managed Client Architecture:** Decoupled, stateful auto-reconnect daemon featuring configurable Exponential Backoff & Jitter.
+* **Automatic Re-Authentication:** Seamless fallback mechanism from session tokens to credentials upon server restarts.
+* **Type-Safe JSON-RPC 2.0:** Full support for synchronous method calls (`Call`) and asynchronous one-way events (`Notify`).
+* **Context-Driven:** Full cancellation support and strict request timeouts to prevent goroutine leaks.
 * **Heartbeat & Time Sync:** Integrated liveness check driven by the client role. The receiving peer automatically responds with `pong` and a precise UTC timestamp.
 * **No TLS Overhead in Code:** Designed for secure internal environments or operation behind reverse proxies (e.g., **Caddy**), which handle TLS termination more efficiently.
 * **Decoupled User Authentication:** Pluggable `UserAuthenticator` interface allows integration of any database, LDAP, or custom auth logic.
@@ -34,12 +33,12 @@ The package is split into the following core responsibilities:
 
 | Component / File | Responsibility |
 | --- | --- |
-| **`node.go` (`Node`)** | Primary lifecycle manager. Starts/stops the HTTP/WebSocket listener, manages handler registrations, and establishes outgoing connections[cite: 1, 2]. |
-| **`peer.go` (`Peer`)** | Bipolar WebSocket connection to a remote node. Handles frame processing, pending request matching, authentication state, and heartbeats[cite: 1, 2]. |
-| **`client.go` (`ManagedClient`)** | Resilient auto-reconnect daemon running a state machine (`Connecting` -> `Authenticating` -> `Ready`) for long-lived client connections[cite: 2]. |
+| **`node.go` (`Node`)** | Primary lifecycle manager. Starts/stops the HTTP/WebSocket listener, manages handler registrations, and establishes outgoing connections. |
+| **`peer.go` (`Peer`)** | Bipolar WebSocket connection to a remote node. Handles frame processing, pending request matching, authentication state, and heartbeats. |
+| **`client.go` (`ManagedClient`)** | Resilient auto-reconnect daemon running a state machine (`Connecting` -> `Authenticating` -> `Ready`) for long-lived client connections. |
 | **`router.go`** | Registers RPC methods (`RegisterHandler`), manages session tokens, and dispatches incoming requests (`dispatchLoop`). |
 | **`protocol.go`** | JSON-RPC 2.0 specification (requests, responses, errors) and mapping logic for `nexutils/errors`. |
-| **`options.go`** | Configuration parameters for timeouts, ports, reconnect policies, and heartbeat intervals[cite: 1, 2]. |
+| **`options.go`** | Configuration parameters for timeouts, ports, reconnect policies, and heartbeat intervals. |
 
 ### 2. Peer-to-Peer (P2P) Principle
 
@@ -63,12 +62,12 @@ Once the initial WebSocket handshake via HTTP GET is completed, the connection u
 ## Installation & Import
 
 ```bash
-go get codeberg.org/tiny-frameworks/nexutils/rpc
+go get codeberg.org/tiny-frameworks/nexutils/p2p
 
 ```
 
 ```go
-import "codeberg.org/tiny-frameworks/nexutils/rpc"
+import "codeberg.org/tiny-frameworks/nexutils/p2p/rpc"
 
 ```
 
@@ -86,7 +85,7 @@ import (
 	"time"
 
 	"codeberg.org/tiny-frameworks/nexutils/logger"
-	"codeberg.org/tiny-frameworks/nexutils/rpc"
+	"codeberg.org/tiny-frameworks/nexutils/p2p/rpc"
 )
 
 func main() {
@@ -126,7 +125,7 @@ import (
 	"context"
 	"time"
 
-	"codeberg.org/tiny-frameworks/nexutils/rpc"
+	"codeberg.org/tiny-frameworks/nexutils/p2p/rpc"
 )
 
 func main() {
@@ -292,7 +291,7 @@ The protocol supports token-based sessions. This avoids sending passwords repeat
 
 ```
 
-*(If the remote server restarted and no longer recognizes the session token, the `ManagedClient` automatically falls back to re-authenticating using stored credentials in the background).*[cite: 2]
+*(If the remote server restarted and no longer recognizes the session token, the `ManagedClient` automatically falls back to re-authenticating using stored credentials in the background).
 
 ---
 
@@ -345,3 +344,4 @@ go test -v ./...
 If you have questions or feedback, feel free to reach out:
 
 📧 *georghagn [at] tiny-frameworks.io*
+

@@ -10,7 +10,7 @@ import (
 	"codeberg.org/tiny-frameworks/nexutils/errors"
 )
 
-// 1. Test für die Formatierung der Error() Methode
+// 1. Test for the formatting of the Error() method
 func TestError_Error(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -18,12 +18,12 @@ func TestError_Error(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "Error ohne Cause",
+			name:     "Error without Cause",
 			err:      errors.New("ERR_NOT_FOUND", "resource missing", "/api/v1/users"),
 			expected: "[ERR_NOT_FOUND] resource missing (Path: /api/v1/users)",
 		},
 		{
-			name:     "Error mit Cause via Wrap",
+			name:     "Error with Cause via Wrap",
 			err:      errors.Wrap("ERR_DB", "query failed", "/db", stdErrors.New("connection timeout")),
 			expected: "[ERR_DB] query failed (Path: /db): connection timeout",
 		},
@@ -38,22 +38,22 @@ func TestError_Error(t *testing.T) {
 	}
 }
 
-// 2. Test für Unwrap & Go-Standard-Kompatibilität (Is / As)
+// 2. Test for Unwrap & Go standard compatibility (Is / As)
 func TestError_UnwrapAndStandardCompat(t *testing.T) {
 	rootErr := stdErrors.New("root cause")
 	nexErr := errors.Wrap("ERR_INTERNAL", "something went wrong", "/core", rootErr)
 
-	// Teste direct Unwrap
+	// Test direct Unwrap
 	if got := errors.Unwrap(nexErr); got != rootErr {
 		t.Errorf("Unwrap() = %v, want %v", got, rootErr)
 	}
 
-	// Teste Go-Standard errors.Is Kompatibilität über den Re-Export
+	// Test Go-Standard errors.Is Compatibility via re-export
 	if !errors.Is(nexErr, rootErr) {
 		t.Errorf("errors.Is() failed to find root cause in error chain")
 	}
 
-	// Teste Go-Standard errors.As Kompatibilität
+	// Teste Go-Standard errors.As Compatibility
 	var target *errors.Error
 	if !errors.As(nexErr, &target) {
 		t.Errorf("errors.As() failed to extract *errors.Error from chain")
@@ -62,7 +62,7 @@ func TestError_UnwrapAndStandardCompat(t *testing.T) {
 	}
 }
 
-// 3. Mock-Logger für den LogError Test
+// 3. Mock-Logger for LogError Test
 type mockLogger struct {
 	lastMsg  string
 	lastArgs []any
@@ -73,7 +73,7 @@ func (m *mockLogger) Error(msg string, args ...any) {
 	m.lastArgs = args
 }
 
-// 4. Test für LogError
+// 4. Test for LogError
 func TestLogError(t *testing.T) {
 	t.Run("Logs structured nexerror", func(t *testing.T) {
 		logger := &mockLogger{}
@@ -86,7 +86,7 @@ func TestLogError(t *testing.T) {
 			t.Errorf("LogError msg = %q, want %q", logger.lastMsg, "database error")
 		}
 
-		// Erwartete Key-Value Argumente prüfen
+		// Check for expected key-value arguments
 		if len(logger.lastArgs) < 4 {
 			t.Fatalf("LogError produced too few args: %v", logger.lastArgs)
 		}

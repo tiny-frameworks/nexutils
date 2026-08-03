@@ -20,7 +20,7 @@ type WSProvider struct {
 
 func NewWSProvider(logger *slog.Logger) *WSProvider {
 	if logger == nil {
-		logger = slog.Default() // Kein Panic, vernünftiger Fallback
+		logger = slog.Default() // No panic, sensible fallback.
 	}
 	return &WSProvider{logger: logger.With("component", "transport.ws")}
 }
@@ -51,14 +51,14 @@ func (p *WSProvider) Listen(ctx context.Context, addr string, found chan<- Conne
 	// A goroutine that waits for the context to be terminated.
 	go func() {
 		<-ctx.Done()
-		p.logger.Info("HTTP-Server fährt herunter...")
+		p.logger.Info("HTTP server is shutting down...")
 		p.server.Shutdown(context.Background())
 	}()
 
 	//ListenAndServe blocks here until Shutdown() is called.
 	err := p.server.ListenAndServe()
 	if stdErrors.Is(err, http.ErrServerClosed) {
-		return nil // Ganz normales Herunterfahren
+		return nil // normal shutdown
 	}
 	return err
 

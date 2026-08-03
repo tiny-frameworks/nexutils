@@ -164,6 +164,4 @@ If you have questions or feedback, feel free to reach out:
 
 📧 *georghagn [at] tiny-frameworks.io*
 
-```
-
 ---

@@ -22,8 +22,8 @@ import (
 const paymentAddr = "ws://127.0.0.1:8080/ws"
 
 func main() {
-	// PreFlight / SetUp
-	// Graceful Shutdown: Haupt-Context für die gesamte Anwendungslebensdauer
+	// SetUp
+	// Graceful Shutdown: activate signal-handling
 	mainCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -34,24 +34,24 @@ func main() {
 		Level:      logger.LevelInfo,
 	}
 	if err := logger.SetupLogging(lgrCfg); err != nil {
-		log.Fatalf("Logger-Fehler: %v", err)
+		log.Fatalf("Logger-Error: %v", err)
 	}
 
-	// Logger mit Kontext anreichern via .With()
+	// Enriching the logger with context via .With()
 	sysLog := logger.Logger.With("component", "secret-service", "role", "client")
 	sysLog.Info("=== Starte nexutils/p2p secret-service Demo ===")
 
-	// Take Off / Application
+	// Application
 	secretService := rpc.NewNode(rpc.Options{
 		Addr:              "127.0.0.1:8082",
 		HeartbeatInterval: 5 * time.Second,
 	})
 
-	// Register handler: Broadcast-Empfänger
+	// Register handler: Broadcast-Receiver
 	secretService.RegisterHandler("systemAlert", func(p *rpc.Peer, req rpc.JsonRPCrequest) (any, *rpc.JsonRPCerror) {
 		var msg string
 		_ = req.UnmarshalParams(&msg)
-		sysLog.Info("📢 >>> secretService hat Broadcast empfangen!", "nachricht", msg)
+		sysLog.Info("📢 >>> secretService has received Broadcast!", "message", msg)
 		return nil, nil
 	})
 
@@ -71,26 +71,26 @@ func main() {
 	}()
 	defer secretService.Stop()
 
-	// Kurze Pause für die Initialisierung
+	// short delay for initialization
 	time.Sleep(100 * time.Millisecond)
 
-	// 3.) ManagedClient erzeugen & starten (Login & Reconnect geschehen autonom im Hintergrund)
-	// Dynamische Client-Anbindung mit Auto-Reconnect & Session-Management
-	// Im Gegensatz zu ConnectToPeer (order-service) liefert diese Methode einen
-	// 'ManagedClient' zurück. Dieser verwaltet den Peer-Zeiger dynamisch bei Verbindungsabbrüchen,
-	// führt automatische Reconnects durch und erlaubt re-authentication (Session-Persistenz).
-	// Aufrufe erfolgen entkoppelt über client.Call(...), nicht direkt über ein statisches Peer-Objekt.
-	// Siehe auch: order-service.go (statische Einmalverbindung)
-	sysLog.Info("--> Starte ManagedClient für paymentService...")
+	// 3.) Create & start ManagedClient (login & reconnect happen autonomously in the background)
+	// Dynamic client connection with auto-reconnect & session management
+	// Unlike ConnectToPeer (order-service), this method returns a
+	// 'ManagedClient'. This manages the peer pointer dynamically during connection drops,
+	// performs automatic reconnects, and allows re-authentication (session persistence).
+	// Calls are made in a decoupled manner via client.Call(...), not directly via a static peer object.
+	// See also: order-service.go (static one-time connection)
+	sysLog.Info("--> Start ManagedClient for paymentService...")
 	client := secretService.ConnectWithAutoReconnect(paymentAddr, rpc.ReconnectConfig{
 		InitialInterval: 1 * time.Second,
 		MaxInterval:     10 * time.Second,
 		MaxRetries:      10,
 	})
-	client.SetCredentials("georg", "secret") // Credentials einmalig hinterlegen
+	client.SetCredentials("georg", "secret") // Enter credentials once
 	defer client.Close()
 
-	// 4.) Aktive Logik (periodischer RPC-Call)
+	// 4.) Active Logic (periodicr RPC-Call)
 	go func() {
 		clientLog := logger.Logger.With("component", "secret-service", "role", "client")
 		cnt := 0
@@ -105,18 +105,18 @@ func main() {
 				cnt++
 				orderID := fmt.Sprintf("Order_%d", cnt)
 
-				// 1. Timeout für DIESEN EINZELNEN Aufruf definieren (3s Limit)
+				// 1. Define a timeout for THIS SPECIFIC call (3s limit)
 				callCtx, cancel := context.WithTimeout(mainCtx, 3*time.Second)
 				var result string
 				rpcErr := client.Call(callCtx, "payment.process", orderID, &result)
-				cancel() // Ressourcen sofort wieder freigeben
+				cancel() // Release resources immediately
 
 				if rpcErr != nil {
 					clientLog.Error("[Secret] Payment failed", "rpcErr", rpcErr)
 
-					// Falls der Client nach 10 Fehlversuchen aufgeben hat:
+					// If the client has given up after 10 failed attempts:
 					if client.IsClosed() {
-						clientLog.Error("ManagedClient hat endgültig aufgegeben. Beende Worker.")
+						clientLog.Error("ManagedClient has given up for good. Shutting down worker.")
 						stop()
 						return
 					}
@@ -129,7 +129,7 @@ func main() {
 	}()
 
 	// Landing / Tear Down
-	sysLog.Info("Warte auf SIGINT/SIGTERM (mainCtx)...")
+	sysLog.Info("Wait for SIGINT/SIGTERM (mainCtx)...")
 	<-mainCtx.Done()
-	sysLog.Info("Signal empfangen! Grund:", "err", mainCtx.Err())
+	sysLog.Info("Signal received! Reason:", "err", mainCtx.Err())
 }

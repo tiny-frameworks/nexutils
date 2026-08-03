@@ -15,36 +15,36 @@ import (
 )
 
 func TestP2PCommunicationAndAuth(t *testing.T) {
-	// Logger ohne File-Output für den Test aufsetzen
+	// Set up a logger without file output for testing.
 	_ = logger.SetupLogging(nil)
 
-	// 1. NODE A aufsetzen (Server-Rolle)
+	// 1. Set up NODE A (server role)
 	nodeA := rpc.NewNode(rpc.Options{
 		Addr:              "127.0.0.1:9091",
 		HeartbeatInterval: 500 * time.Millisecond,
 	})
 
-	// Geschützte Test-Methode auf Node A registrieren
+	// Register protected test method on Node A
 	nodeA.RegisterHandler("getSecretData", func(p *rpc.Peer, req rpc.JsonRPCrequest) (any, *rpc.JsonRPCerror) {
 		if !p.IsAuthorized() {
-			errObj := errors.New(errors.UnauthorizedError, "Zugriff verweigert", "nexutils.p2p.rpc.node_test.go")
+			errObj := errors.New(errors.UnauthorizedError, "Access denied", "nexutils.p2p.rpc.node_test.go")
 			return nil, rpc.NewRPCErrorFromNexError(rpc.NotAuthorized, errObj)
 		}
-		return map[string]string{"secret": "Geheimnis für " + p.ID}, nil
+		return map[string]string{"secret": "Secret to " + p.ID}, nil
 	})
 
-	// Node A im Hintergrund starten
+	// Start Node A in the background
 	go func() {
 		if err := nodeA.Start(); err != nil {
-			t.Logf("Node A gestoppt: %v", err)
+			t.Logf("Node A stopped: %v", err)
 		}
 	}()
 	defer nodeA.Stop()
 
-	// Warten bis Listener bereit ist
+	// Wait until the listener is ready
 	time.Sleep(100 * time.Millisecond)
 
-	// 2. NODE B aufsetzen (Client-Rolle)
+	// 2. Set up NODE B (client role)
 	nodeB := rpc.NewNode(rpc.Options{
 		Addr:              "127.0.0.1:9092",
 		HeartbeatInterval: 500 * time.Millisecond,
@@ -52,22 +52,22 @@ func TestP2PCommunicationAndAuth(t *testing.T) {
 
 	go func() {
 		if err := nodeB.Start(); err != nil {
-			t.Logf("Node B gestoppt: %v", err)
+			t.Logf("Node B stopped: %v", err)
 		}
 	}()
 	defer nodeB.Stop()
 
 	time.Sleep(100 * time.Millisecond)
 
-	// 3. VERBINDUNGSAUFBAU: Node B verbindet sich zu Node A
-	t.Log("--> Verbinde Node B mit Node A...")
+	// 3. CONNECTION ESTABLISHMENT: Node B connects to Node A.
+	t.Log("--> Connect Node B to Node A....")
 	peerA, err := nodeB.ConnectToPeer("ws://127.0.0.1:9091/ws")
 	if err != nil {
-		t.Fatalf("Verbindungsfehler: %v", err)
+		t.Fatalf("Connection error: %v", err)
 	}
 
-	// 4. TEST: Aufruf geschützter Methode vor der Auth (muss fehlschlagen)
-	t.Log("--> Teste Zugriff auf geschützte Methode OHNE Auth...")
+	// 4. TEST: Call to protected method before authentication (must fail)
+	t.Log("--> Test access to protected method WITHOUT auth...")
 	unauthReq := rpc.JsonRPCrequest{
 		JSONRPC: "2.0",
 		Method:  "getSecretData",
@@ -75,7 +75,7 @@ func TestP2PCommunicationAndAuth(t *testing.T) {
 	}
 	peerA.Send(unauthReq)
 
-	// 5. TEST: Authentifizierung durchführen
+	// 5. TEST: Perform authentication
 	t.Log("--> Sende Auth-Anfrage an Node A...")
 	authParams, _ := json.Marshal(map[string]string{
 		"username": "georg",
@@ -89,11 +89,11 @@ func TestP2PCommunicationAndAuth(t *testing.T) {
 	}
 	peerA.Send(authReq)
 
-	// 6. Warten für den automatischen Heartbeat Loop (Node B -> Node A)
-	t.Log("--> Warte 1.5s (prüfe aktiven Heartbeat-Betrieb)...")
+	// 6. Waiting for the automatic heartbeat loop (Node B -> Node A)
+	t.Log("--> Wait 1.5s (check active heartbeat operation)...")
 	time.Sleep(1500 * time.Millisecond)
 
-	t.Log("--> Test erfolgreich durchgelaufen!")
+	t.Log("--> Test completed successfully!")
 }
 
 func TestAutoReconnectAndSessionRestore(t *testing.T) {

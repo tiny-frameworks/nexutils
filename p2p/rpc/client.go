@@ -17,7 +17,7 @@ type ReconnectConfig struct {
 	InitialInterval time.Duration
 	MaxInterval     time.Duration
 	Multiplier      float64
-	MaxRetries      int // 0 = unendlich
+	MaxRetries      int // 0 = infinite
 }
 
 func (c *ReconnectConfig) setDefaults() {
@@ -32,7 +32,7 @@ func (c *ReconnectConfig) setDefaults() {
 	}
 }
 
-// ManagedClient verwaltet eine P2P-Verbindung inklusive Auto-Reconnect und Session.
+// ManagedClient manages a P2P connection, including auto-reconnect and session handling.
 type ManagedClient struct {
 	node      *Node
 	targetURL string
@@ -63,7 +63,7 @@ func NewManagedClient(node *Node, targetURL string, cfg ReconnectConfig) *Manage
 	}
 }
 
-// SetCredentials hinterlegt Zugangsdaten für automatische Login-/Re-Auth-Vorgänge.
+// SetCredentials stores access credentials for automatic login and re-authentication processes.
 func (mc *ManagedClient) SetCredentials(username, password string) {
 	mc.mu.Lock()
 	defer mc.mu.Unlock()
@@ -71,12 +71,12 @@ func (mc *ManagedClient) SetCredentials(username, password string) {
 	mc.password = password
 }
 
-// Start startet die Verbindung und den Überwachungs-Loop im Hintergrund.
+// "Start" initiates the connection and the monitoring loop in the background.
 func (mc *ManagedClient) Start() {
 	go mc.lifecycleLoop()
 }
 
-// Close beendet den Client dauerhaft.
+// Close closes permanently terminates the client.
 func (mc *ManagedClient) Close() {
 	mc.mu.Lock()
 	if mc.closed {
@@ -106,7 +106,7 @@ func (mc *ManagedClient) IsReady() bool {
 	return mc.isReady && !mc.closed
 }
 
-// Call leitet Aufrufe nur durch, wenn die Verbindung vollständig bereit (Ready) ist.
+// Call forwards calls only when the connection is fully ready.
 func (mc *ManagedClient) Call(ctx context.Context, method string, params any, resultTarget any) *JsonRPCerror {
 	mc.mu.RLock()
 	peer := mc.currentPeer
@@ -124,21 +124,21 @@ func (mc *ManagedClient) Call(ctx context.Context, method string, params any, re
 	return peer.Call(ctx, method, params, resultTarget)
 }
 
-// GetPeer liefert den aktuellen Peer (oder nil).
+// GetPeer returns the current peer (or nil).
 func (mc *ManagedClient) GetPeer() *Peer {
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
 	return mc.currentPeer
 }
 
-// --- Der zentrale Lifecycle-Loop (EINZIGE Stelle für Connect & Reconnect) ---
+// --- The central lifecycle loop (the SINGLE point for Connect & Reconnect) ---
 
 func (mc *ManagedClient) lifecycleLoop() {
 	interval := mc.config.InitialInterval
 	attempts := 0
 
 	for {
-		// 0. Prüfen, ob der Client oder Node beendet wurde
+		// 1. Check whether the client or node has terminated.
 		select {
 		case <-mc.ctx.Done():
 			return
@@ -154,12 +154,12 @@ func (mc *ManagedClient) lifecycleLoop() {
 
 		logger.Logger.Info(fmt.Sprintf("Connecting to peer (Attempt %d)...", attempts), "target", mc.targetURL)
 
-		// PHASE 1: Verbinden & Authentifizieren
+		//PHASE 1: Connect & Authenticate
 		peer, err := mc.node.ConnectToPeer(mc.targetURL)
 		if err == nil {
-			// Verbindung steht, jetzt Authentifizieren
+			// Connection established; authenticate now.
 			if err := mc.authenticatePeer(peer); err == nil {
-				// SUCCESS! Zähler zurücksetzen
+				// SUCCESS! reset counter
 				attempts = 0
 				interval = mc.config.InitialInterval
 
@@ -170,13 +170,13 @@ func (mc *ManagedClient) lifecycleLoop() {
 
 				logger.Logger.Info("Successfully connected and authenticated!", "target", mc.targetURL, "peer", peer.ID)
 
-				// PHASE 2: WARTEN auf Verbindungsabbruch
-				// Die Schleife BLOCKIERT hier sauber, solange die Verbindung lebt!
+				// PHASE 2: WAIT for connection termination
+				// The loop cleanly blocks here as long as the connection is active!
 				select {
 				case <-mc.ctx.Done():
-					return // Client wurde manuell beendet
+					return // Client was manually terminated.
 				case <-peer.ctx.Done():
-					// Verbindung wurde getrennt! Status sofort zurücksetzen
+					// Connection lost! Reset status immediately.
 					logger.Logger.Warn("Peer connection lost! Initiating reconnect...", "target", mc.targetURL)
 
 					mc.mu.Lock()
@@ -192,7 +192,7 @@ func (mc *ManagedClient) lifecycleLoop() {
 			logger.Logger.Warn("Connection failed", "target", mc.targetURL, "err", err)
 		}
 
-		// PHASE 3: BACKOFF WARTEZEIT (Wird IMMER ausgeführt, wenn Phase 1 oder 2 fehlschlagen/abbrechen)
+		// PHASE 3: BACKOFF WAIT TIME (Always executed if Phase 1 or 2 fails or aborts)
 		jitter := time.Duration(rand.Float64() * 0.4 * float64(interval))
 		waitDuration := interval - (20 * interval / 100) + jitter
 
@@ -204,7 +204,7 @@ func (mc *ManagedClient) lifecycleLoop() {
 		case <-time.After(waitDuration):
 		}
 
-		// Backoff für den nächsten Fehlversuch verdoppeln
+		// Double the backoff for the next failed attempt.
 		interval = time.Duration(float64(interval) * mc.config.Multiplier)
 		if interval > mc.config.MaxInterval {
 			interval = mc.config.MaxInterval
@@ -217,7 +217,7 @@ func (mc *ManagedClient) authenticatePeer(p *Peer) error {
 	user, pass, token := mc.username, mc.password, mc.token
 	mc.mu.RUnlock()
 
-	// 1. Wenn überhaupt keine Auth-Daten vorliegen -> Sofort durchwinken
+	// 1. If no authentication data is present at all -> Pass through immediately.
 	if user == "" && pass == "" && token == "" {
 		return nil
 	}
@@ -227,11 +227,11 @@ func (mc *ManagedClient) authenticatePeer(p *Peer) error {
 
 	var authRes AuthResult
 
-	// --- SCHRITT A: Versuch mit bestehendem Token ---
+	// --- STEP A: Attempt with existing token ---
 	if token != "" {
 		rpcErr := p.Call(ctx, "auth", AuthParams{Token: token}, &authRes)
 		if rpcErr == nil && authRes.Token != "" {
-			// Token war noch gültig!
+			// The token was still valid!
 			mc.mu.Lock()
 			mc.token = authRes.Token
 			mc.mu.Unlock()
@@ -239,23 +239,23 @@ func (mc *ManagedClient) authenticatePeer(p *Peer) error {
 			return nil
 		}
 
-		// Token war ungültig oder abgelaufen!
+		// Token was invalid or expired!
 		logger.Logger.Warn("Token invalid or expired. Resetting token and retrying with credentials...", "peer", p.ID)
 
-		// Token löschen, damit zukünftige Versuche sauber sind
+		// Delete the token so that future attempts are clean.
 		mc.mu.Lock()
 		mc.token = ""
 		mc.mu.Unlock()
 	}
 
-	// --- SCHRITT B: Erst-Auth oder Fallback mit Username & Passwort ---
+	// --- STEP B: Initial authentication or fallback using username and password ---
 	if user != "" && pass != "" {
 		rpcErr := p.Call(ctx, "auth", AuthParams{Username: user, Password: pass}, &authRes)
 		if rpcErr != nil {
 			return fmt.Errorf("credential auth failed: %s", rpcErr.Message)
 		}
 
-		// Neues Token für zukünftige Reconnects hinterlegen
+		// Save new token for future reconnects
 		mc.mu.Lock()
 		mc.token = authRes.Token
 		mc.mu.Unlock()

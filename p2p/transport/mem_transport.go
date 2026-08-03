@@ -8,7 +8,7 @@ import (
 	"errors"
 )
 
-// MemConnection implementiert transport.Connection für In-Memory Tests
+// MemConnection implements transport.Connection for in-memory tests.
 type MemConnection struct {
 	In  chan []byte
 	Out chan []byte

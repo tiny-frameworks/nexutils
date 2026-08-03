@@ -1,4 +1,6 @@
-// lrucache_test.go
+// Copyright 2026 Georg Hagn (tiny-frameworks)
+// SPDX-License-Identifier: Apache-2.0
+
 package cache_test
 
 import (
@@ -10,9 +12,9 @@ import (
 	"codeberg.org/tiny-frameworks/nexutils/cache"
 )
 
-// Example_base zeigt die grundlegende Nutzung des Caches.
+// Example_base demonstrates the basic usage of the cache.
 func Example_base() {
-	// Cache mit Kapazität 3, TTL 50ms, Cleanup alle 20ms
+	// Cache with Capazity 3, TTL 50ms, Cleanup every 20ms
 	c := cache.New(3, 50*time.Millisecond, 20*time.Millisecond)
 	defer c.StopCleanup()
 
@@ -20,8 +22,8 @@ func Example_base() {
 	c.Set("B", 2)
 	c.Set("C", 3)
 
-	// Direkt nach dem Setzen → Werte abrufen
-	fmt.Println("Direkt nach Setzen:")
+	// Immediately after setting → Retrieve values
+	fmt.Println("Immediately after setting:")
 
 	item, found := c.Get("A")
 	fmt.Println("A:", item, found) // 1
@@ -32,40 +34,40 @@ func Example_base() {
 	item, found = c.Get("C")
 	fmt.Println("C:", item, found) // 3
 
-	// 4 Sekunden warten, damit die Werte ablaufen
+	// Wait 4 seconds for the values ​​to expire.
 	time.Sleep(80 * time.Millisecond)
 
-	// Nach Ablauf der TTL → Werte abrufen (Cleanup sollte alte Einträge entfernt haben)
-	fmt.Println("\nNach Ablauf der TTL:")
+	// After TTL expiration → retrieve values ​​(cleanup should have removed old entries)
+	fmt.Println("\nAfter the TTL expires:")
 
 	item, found = c.Get("A")
-	fmt.Println("A:", item, found) // nil, weil abgelaufen
+	fmt.Println("A:", item, found) // nil, because expired
 
 	item, found = c.Get("B")
-	fmt.Println("B:", item, found) // nil, weil abgelaufen
+	fmt.Println("B:", item, found) // nil, because expired
 
 	item, found = c.Get("C")
-	fmt.Println("C:", item, found) // nil, weil abgelaufen
+	fmt.Println("C:", item, found) // nil, because expired
 
-	// Neues Element hinzufügen → Cache leert sich automatisch
+	// Add new element → Cache clears automatically
 	c.Set("D", 4)
-	fmt.Println("\nNach dem Hinzufügen von D:")
+	fmt.Println("\nAfter adding D:")
 
 	item, found = c.Get("D")
-	fmt.Println("D:", item, found) // ❌ nil, weil abgelaufen
+	fmt.Println("D:", item, found) // ❌ nil, because expired
 
 	// Output:
-	// Direkt nach Setzen:
+	// Immediately after setting:
 	// A: 1 true
 	// B: 2 true
 	// C: 3 true
 	//
-	// Nach Ablauf der TTL:
+	// After the TTL expires:
 	// A: <nil> false
 	// B: <nil> false
 	// C: <nil> false
 	//
-	// Nach dem Hinzufügen von D:
+	// After adding D:
 	// D: 4 true
 
 }
@@ -115,7 +117,7 @@ func Example_komplett() {
 	})
 	fmt.Println("user:1 =", val, "err:", err)
 
-	// Nächster Zugriff holt aus Cache, Loader wird NICHT aufgerufen
+	// Next access retrieves from cache; loader is NOT called.
 	val, _ = c.GetOrLoad("user:1", func() (interface{}, error) {
 		fmt.Println("This Loader should not run!")
 		return "Bob", nil
@@ -165,23 +167,23 @@ func Example_komplett() {
 func Example_persistencen() {
 	c := cache.New(3, 10*time.Second, 2*time.Second)
 
-	// Daten setzen
+	// Set data
 	c.Set("A", 1)
 	c.Set("B", 2)
 	c.Set("C", 3)
 
-	// Cache speichern
+	// save Cache
 	if err := c.SaveToFile("cache.json"); err != nil {
 		fmt.Println("Error saving:", err)
 	}
 
-	// Neuen Cache laden
+	// load new cache
 	newCache := cache.New(3, 10*time.Second, 2*time.Second)
 	if err := newCache.LoadFromFile("cache.json"); err != nil {
 		fmt.Println("Error loading:", err)
 	}
 
-	// Werte abrufen
+	// Retrieve values
 	item, found := c.Get("A")
 	fmt.Println("A:", item, found) // 1
 	item, found = c.Get("B")
@@ -199,10 +201,10 @@ func Example_getOrReload() {
 	c := cache.New(3, 5*time.Second, 2*time.Second)
 	defer c.StopCleanup()
 
-	// Zähler für deterministisches Verhalten im Test
+	// Counter for deterministic behavior during testing
 	callCount := 0
 
-	// Loader, der beim 2. Aufruf simuliert, dass die DB unerreichbar ist
+	// Loader that simulates the database being unreachable on the second call.
 	loader := func() (any, error) {
 		callCount++
 		if callCount == 2 {
@@ -211,7 +213,7 @@ func Example_getOrReload() {
 		return fmt.Sprintf("Value loaded (Call %d)", callCount), nil
 	}
 
-	// 1. Aufruf: Wert wird erfolgreich aus dem Loader geladen und gecacht
+	// 1st call: Value is successfully loaded from the loader and cached.
 	val, err := c.GetOrLoad("user:42", loader)
 	if err != nil {
 		fmt.Println("Error:", err)
@@ -219,7 +221,7 @@ func Example_getOrReload() {
 		fmt.Println("Result:", val)
 	}
 
-	// 2. Aufruf: Wert kommt direkt aus dem Cache (Loader wird gar nicht ausgeführt!)
+	// 2nd call: Value comes directly from the cache (loader is not executed at all!)
 	val, err = c.GetOrLoad("user:42", loader)
 	if err != nil {
 		fmt.Println("Error:", err)

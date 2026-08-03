@@ -23,7 +23,7 @@ GSF-nexutils ist eine hochperformante, modulare Sammlung essenzieller Go-Utiliti
 | **`errors`** | `nexutils/errors` | Domain-driven Fehlerbehandlung mit Fehlercodes, Call-Paths und OS Exit-Code Mapping. |
 | **`lockingwriter`** | `nexutils/lockingwriter` | Prozess-sicherer `io.Writer` mittels `.LOCK`-Dateien inklusive PID & Timestamp-Erkennung verwaister Locks. |
 | **`logging`** | `nexutils/logging` | `slog`-basierter strukturierter Logger mit nativer Unterstützung für `nexutils/errors`. |
-| **`p2p`** | `nexutils/p2p` | `nexutils/p2p` ist ein leichtgewichtiges, performantes **JSON-RPC 2.0 über WebSocket** Paket für Go. |
+| **`p2p`** | `nexutils/p2p` | `nexutils/p2p` ist ein leichtgewichtiges, performantes JSON-RPC 2.0 über WebSocket Paket für Go. |
 
 ---
 

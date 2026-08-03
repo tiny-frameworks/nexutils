@@ -3,7 +3,7 @@
 
 package errors
 
-// exitInfo bündelt den numerischen Code mit einer Beschreibung
+// exitInfo bundles the numeric code with a description.
 type exitInfo struct {
 	ExitCode int
 	Desc     string
