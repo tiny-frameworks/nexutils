@@ -101,14 +101,14 @@ func TestAutoReconnectAndSessionRestore(t *testing.T) {
 
 	serverAddr := "127.0.0.1:9095"
 
-	// Helper-Funktion: Registriert den Auth-Handler auf dem Server
+	// Helper-Funkcion: Registers the auth handler on the server.
 	registerAuthHandler := func(n *rpc.Node) {
 		n.RegisterHandler("auth", func(p *rpc.Peer, req rpc.JsonRPCrequest) (any, *rpc.JsonRPCerror) {
 			var params rpc.AuthParams
 			if err := req.UnmarshalParams(&params); err != nil {
 				return nil, &rpc.JsonRPCerror{Code: rpc.InvalidParams, Message: "invalid params"}
 			}
-			// Akzeptiere sowohl Valid-User als auch Re-Auth via Token
+			// Accept both valid users and re-authentication via token.
 			if params.Username == "georg" || params.Token != "" {
 				return rpc.AuthResult{Token: "test-session-token-12345", Status: "OK"}, nil
 			}
@@ -133,7 +133,7 @@ func TestAutoReconnectAndSessionRestore(t *testing.T) {
 	defer nodeB.Stop()
 	time.Sleep(100 * time.Millisecond)
 
-	// 3. Reconnect-Config mit schnellen Intervallen für den Unit Test
+	// 3. Reconnect configuration with rapid intervals for the unit test
 	reconnectCfg := rpc.ReconnectConfig{
 		InitialInterval: 100 * time.Millisecond,
 		MaxInterval:     500 * time.Millisecond,
@@ -142,52 +142,52 @@ func TestAutoReconnectAndSessionRestore(t *testing.T) {
 	}
 
 	t.Log("--> [Step 1] Node B verbindet sich via ManagedClient mit Node A...")
-	// ConnectWithAutoReconnect liefert NUR NOCH den *ManagedClient zurück:
+	// ConnectWithAutoReconnect now returns ONLY the *ManagedClient:
 	client := nodeB.ConnectWithAutoReconnect("ws://"+serverAddr+"/ws", reconnectCfg)
-	client.SetCredentials("georg", "secret") // Credentials für Login & Auto-Re-Auth setzen
+	client.SetCredentials("georg", "secret") // Credentials for Login & Auto-Re-Auth
 	defer client.Close()
 
-	// Kurze Pause, bis Erstverbindung + Auth durch sind
+	// Short delay until the initial connection and authentication are complete.
 	time.Sleep(300 * time.Millisecond)
 
 	if !client.IsReady() {
-		t.Fatalf("Erstverbindung/Auth fehlgeschlagen!")
+		t.Fatalf("Initial connection/authentication failed!")
 	}
 
-	// 4. SERVER-AUSFALL SIMULIEREN
-	t.Log("--> [Step 2] Fahre Node A herunter (Simulierter Netzwerkausfall/Crash)...")
+	// 4. Simulate server failure
+	t.Log("--> [Step 2] Shut down Node A (simulated network failure/crash)...")
 	_ = nodeA.Stop()
 
-	// Warten, damit der Client den Abbruch bemerkt und isReady auf false geht
+	// Wait for the client to detect the cancellation and for isReady to switch to false.
 	time.Sleep(300 * time.Millisecond)
 
 	if client.IsReady() {
-		t.Fatalf("Fehler: Client meldet immer noch 'IsReady', obwohl Server tot ist!")
+		t.Fatalf("Error: Client still reports 'IsReady' even though the server is down!")
 	}
 
 	// 5. RESTART DES SERVERS
-	t.Log("--> [Step 3] Starte Node A neu auf demselben Port...")
+	t.Log("--> [Step 3] Restart Node A on the same port....")
 	nodeA_restarted := rpc.NewNode(rpc.Options{Addr: serverAddr})
-	registerAuthHandler(nodeA_restarted) // Auth-Handler wieder auf neuem Server registrieren
+	registerAuthHandler(nodeA_restarted) // again register Auth-Handler to new Server
 
 	go func() {
 		_ = nodeA_restarted.Start()
 	}()
 	defer nodeA_restarted.Stop()
 
-	t.Log("--> [Step 4] Warte auf automatischen Reconnect + Re-Auth...")
+	t.Log("--> [Step 4] Waiting for automatic reconnect+ Re-Auth...")
 	time.Sleep(1000 * time.Millisecond)
 
-	// Prüfen, ob der Client wieder eine aktive & authentifizierte Verbindung hat
+	// Check whether the client has an active and authenticated connection again.
 	if !client.IsReady() {
-		t.Fatalf("Fehler: ManagedClient hat nach Server-Restart die Verbindung nicht erfolgreich wiederhergestellt!")
+		t.Fatalf("Error: ManagedClient failed to successfully re-establish the connection after the server restart!")
 	}
 
 	if client.GetPeer() == nil {
-		t.Fatalf("Fehler: ManagedClient.GetPeer() ist nil nach Reconnect!")
+		t.Fatalf("Error: ManagedClient.GetPeer() is nil after reconnect!")
 	}
 
-	t.Log("--> [Erfolg] Auto-Reconnect & Re-Auth haben die Verbindung erfolgreich wiederhergestellt!")
+	t.Log("--> [Success] Auto-reconnect and re-auth have successfully restored the connection!")
 }
 
 func TestSynchronousCall(t *testing.T) {
@@ -213,7 +213,7 @@ func TestSynchronousCall(t *testing.T) {
 
 	peerA, err := nodeB.ConnectToPeer("ws://127.0.0.1:9097/ws")
 	if err != nil {
-		t.Fatalf("Verbindungsfehler: %v", err)
+		t.Fatalf("Connection error: %v", err)
 	}
 
 	// SYNCHRONER CALL TEST
@@ -223,18 +223,18 @@ func TestSynchronousCall(t *testing.T) {
 	var result int
 	params := map[string]int{"A": 15, "B": 27}
 
-	t.Log("--> Führe synchronen peer.Call('add') aus...")
+	t.Log("--> Execute synchronous peer.Call('add')...")
 	rpcErr := peerA.Call(ctx, "add", params, &result)
 
 	if rpcErr != nil {
-		t.Fatalf("RPC Call fehlgeschlagen: %s", rpcErr.Message)
+		t.Fatalf("RPC Call failed: %s", rpcErr.Message)
 	}
 
 	if result != 42 {
-		t.Fatalf("Unerwartetes Ergebnis: Erwartet 42, bekommen %d", result)
+		t.Fatalf("Unexpected result: Expected 42, got %d", result)
 	}
 
-	t.Logf("--> [Erfolg] Synchroner Call hat geklappt! Ergebnis = %d", result)
+	t.Logf("--> [Success] Synchronous call succeeded! Result = %d", result)
 }
 
 func TestBroadcastWithFilter(t *testing.T) {
@@ -242,21 +242,21 @@ func TestBroadcastWithFilter(t *testing.T) {
 
 	nodeA := rpc.NewNode(rpc.Options{Addr: "127.0.0.1:9099"})
 
-	// Kanal zum Mitzählen empfangener Notifications auf Client-Seite
+	//Channel for counting received notifications on the client side
 	receivedNotifications := make(chan string, 10)
 
 	nodeA.RegisterHandler("notifyEvent", func(p *rpc.Peer, req rpc.JsonRPCrequest) (any, *rpc.JsonRPCerror) {
 		var msg string
 		_ = req.UnmarshalParams(&msg)
 		receivedNotifications <- msg
-		return nil, nil // Notifications erwarten eigentlich keine Antworte, Handler verarbeitet nur
+		return nil, nil // Notifications do not actually expect a response; the handler simply processes them.
 	})
 
 	go func() { _ = nodeA.Start() }()
 	defer nodeA.Stop()
 	time.Sleep(100 * time.Millisecond)
 
-	// Node B verbindet sich mit Node A
+	// Node B connects to Node A.
 	nodeB := rpc.NewNode(rpc.Options{Addr: "127.0.0.1:9100"})
 	go func() { _ = nodeB.Start() }()
 	defer nodeB.Stop()
@@ -264,20 +264,20 @@ func TestBroadcastWithFilter(t *testing.T) {
 
 	peerA, err := nodeB.ConnectToPeer("ws://127.0.0.1:9099/ws")
 	if err != nil {
-		t.Fatalf("Verbindungsfehler: %v", err)
+		t.Fatalf("Connection error: %v", err)
 	}
 
 	// Sende Broadcast von Node B an Node A
-	t.Log("--> Sende Broadcast 'notifyEvent'...")
+	t.Log("--> Send Broadcast 'notifyEvent'...")
 	peerA.Notify("notifyEvent", "Hallo Node A!")
 
 	select {
 	case msg := <-receivedNotifications:
 		if msg != "Hallo Node A!" {
-			t.Fatalf("Unerwartete Nachricht: %s", msg)
+			t.Fatalf("Unespected Message: %s", msg)
 		}
-		t.Log("--> [Erfolg] Notification empfangen und verarbeitet!")
+		t.Log("--> [Success] Notification received and processed!")
 	case <-time.After(1 * time.Second):
-		t.Fatal("Timeout: Notification wurde nicht empfangen")
+		t.Fatal("Timeout: Notification was not received.")
 	}
 }

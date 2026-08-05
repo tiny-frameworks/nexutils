@@ -58,8 +58,8 @@ type JsonRPCresponse struct {
 	ID      json.RawMessage `json:"id,omitempty"`
 }
 
-// NewRPCErrorFromNexError konvertiert ein nexutils/errors.Error in einen JsonRPCerror.
-// Das nexutils Error-Objekt wird dabei sauber im 'Data'-Feld mitgeliefert.
+// NewRPCErrorFromNexError converts a nexutils/errors.Error into a JsonRPCerror.
+// The nexutils error object is cleanly included in the 'Data' field.
 func NewRPCErrorFromNexError(code int, err *errors.Error) *JsonRPCerror {
 	msg := StdError[code]
 	if msg == "" && err != nil {
@@ -72,34 +72,34 @@ func NewRPCErrorFromNexError(code int, err *errors.Error) *JsonRPCerror {
 	}
 }
 
-// rawJSONID Hilfsfunktion für IDs
+// rawJSONID Helperfunction for IDs
 func rawJSONID(id int64) json.RawMessage {
 	b, _ := json.Marshal(id)
 	return b
 }
 
-// UserAuthenticator muss von jeder User-Verwaltung implementiert werden.
+// UserAuthenticator must be implemented by every user management system.
 type UserAuthenticator interface {
-	// Authenticate prüft Username & Password.
-	// Gibt true zurück, wenn die Credentials korrekt sind.
+	// Authenticate checks the username and password.
+	// Returns true if the credentials are correct.
 	Authenticate(ctx context.Context, username, password string) bool
 }
 
-// Default/Fallback Provider (für Demos oder Tests)
+// Default/Fallback Provider (for Demos or Tests)
 type DummyAuthenticator struct{}
 
 func (d *DummyAuthenticator) Authenticate(ctx context.Context, username, password string) bool {
-	// Standard-Verhalten beibehalten, solange kein echter Provider gesetzt ist
+	// Maintain standard behavior as long as no actual provider is set.
 	return username == "georg" && password == "secret"
 }
 
-// IsResponse prüft, ob es sich um eine JSON-RPC Antwort auf einen eigenen Request handelt
+// IsResponse checks whether it is a JSON-RPC response to a request of its own.
 func (req *JsonRPCrequest) IsResponse() bool {
 	return req.Method == "" && req.ID != nil
 }
 
-// UnmarshalParams ist eine bequeme Hilfsmethode, um die JSON-RPC Parameter
-// direkt in ein Ziel-Struct oder eine Variable zu parsen.
+// UnmarshalParams is a convenient helper method for parsing JSON-RPC parameters
+// directly into a target struct or variable.
 func (req *JsonRPCrequest) UnmarshalParams(v any) error {
 	if len(req.Params) == 0 {
 		return nil

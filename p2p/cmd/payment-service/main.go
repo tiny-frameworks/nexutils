@@ -32,7 +32,7 @@ func main() {
 	log.Info("=== Starte nexutils/p2p payment-service Demo ===")
 
 	// -------------------------------------------------------------------------
-	// Node payment-service (Server-Rolle)
+	// Node payment-service (Server-Role)
 	// -------------------------------------------------------------------------
 	paymentService := rpc.NewNode(rpc.Options{
 		Addr:              "127.0.0.1:8080",
@@ -60,7 +60,7 @@ func main() {
 	}()
 
 	// -------------------------------------------------------------------------
-	// Broadcast-Loop in paymentService (Server-Rolle)
+	// Broadcast-Loop in paymentService (Server-Role)
 	// -------------------------------------------------------------------------
 	go func() {
 		//Logger for the background task

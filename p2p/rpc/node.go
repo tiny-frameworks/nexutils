@@ -124,31 +124,31 @@ func (n *Node) SetAuthenticator(auth UserAuthenticator) {
 	n.router.SetAuthenticator(auth)
 }
 
-// ConnectWithAutoReconnect erstellt einen ManagedClient, der sich im Hintergrund
-// autonom verbindet, authentifiziert und Reconnects verwaltet.
+// ConnectWithAutoReconnect creates a ManagedClient that autonomously connects,
+// authenticates, and manages reconnections in the background.
 func (n *Node) ConnectWithAutoReconnect(targetURL string, cfg ReconnectConfig) *ManagedClient {
 	client := NewManagedClient(n, targetURL, cfg)
-	client.Start() // Startet den synchronisierenden lifecycleLoop im Hintergrund
+	client.Start() // Starts the synchronizing lifecycleLoop in the background.
 	return client
 }
 
-// Broadcast Funktionalität
-// PeerFilter ist eine Funktion, die entscheidet, ob ein Peer ein Signal erhalten soll.
+// Broadcast functionality
+// PeerFilter is a function that determines whether a peer should receiv e a signal.
 type PeerFilter func(p *Peer) bool
 
-// BroadcastFilter schickt ein Notification-Signal an alle Peers, auf die der Filter zutrifft.
+// BroadcastFilter sends a notification signal to all peers to which the filter applies.
 func (n *Node) BroadcastFilter(method string, params any, filter PeerFilter) {
 	n.mu.RLock()
-	// Wir machen einen Schnappschuss der aktuellen Peers, um den Mutex schnell freizugeben
+	// We take a snapshot of the current peers in order to quickly release the mutex.
 	activePeers := make([]*Peer, 0, len(n.peers))
 	for p := range n.peers {
 		activePeers = append(activePeers, p)
 	}
 	n.mu.RUnlock()
 
-	// Über die Liste iterieren und filtern
+	// Iterate over and filter the list
 	for _, p := range activePeers {
-		// Falls ein Filter übergeben wurde und er 'false' liefert -> überspringen
+		// If a filter was passed and it returns 'false' -> skip
 		if filter != nil && !filter(p) {
 			continue
 		}
@@ -159,19 +159,19 @@ func (n *Node) BroadcastFilter(method string, params any, filter PeerFilter) {
 	}
 }
 
-// Broadcast schickt ein Notification-Signal an ALLE verbundenen Peers.
+// Broadcast sends a notification signal to ALL connected peers.
 func (n *Node) Broadcast(method string, params any) {
 	n.BroadcastFilter(method, params, nil)
 }
 
-// BroadcastAuthorized schickt ein Notification-Signal NUR an authentifizierte Peers.
+// BroadcastAuthorized sends a notification signal ONLY to authenticated peers.
 func (n *Node) BroadcastAuthorized(method string, params any) {
 	n.BroadcastFilter(method, params, func(p *Peer) bool {
 		return p.IsAuthorized()
 	})
 }
 
-// BroadcastToUsers schickt ein Notification-Signal an eine spezifische Liste von Usernamen.
+// BroadcastToUsers sends a notification signal to a specific list of usernames.
 func (n *Node) BroadcastToUsers(method string, params any, usernames []string) {
 	userMap := make(map[string]bool, len(usernames))
 	for _, u := range usernames {

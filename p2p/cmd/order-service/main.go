@@ -44,7 +44,7 @@ func main() {
 		HeartbeatInterval: 5 * time.Second,
 	})
 
-	/Send a system alert message to everyone every 15 seconds.
+	// Send a system alert message to everyone every 15 seconds.
 	orderService.RegisterHandler("order.process", func(p *rpc.Peer, req rpc.JsonRPCrequest) (any, *rpc.JsonRPCerror) {
 		var params json.RawMessage
 		req.UnmarshalParams(&params)

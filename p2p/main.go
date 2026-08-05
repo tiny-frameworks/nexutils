@@ -19,34 +19,34 @@ type AddParams struct {
 }
 
 func main() {
-	// 1. Logger aufsetzen (Konsole)
+	// 1. Setting up the logger (console)
 	if err := logger.SetupLogging(nil); err != nil {
-		log.Fatalf("Logger-Fehler: %v", err)
+		log.Fatalf("Logger-Error: %v", err)
 	}
 
 	logger.Logger.Info("=== Starte nexutils/rpc P2P Demo ===")
 
 	// -------------------------------------------------------------------------
-	// KNOTEN A (Server-Rolle)
+	// KNOTEN A (Server-Role)
 	// -------------------------------------------------------------------------
 	nodeA := rpc.NewNode(rpc.Options{
 		Addr:              "127.0.0.1:8080",
 		HeartbeatInterval: 5 * time.Second,
 	})
 
-	// Anwendungs-Handler auf Node A registrieren
+	// Register application handler on Node A
 	nodeA.RegisterHandler("add", func(p *rpc.Peer, req rpc.JsonRPCrequest) (any, *rpc.JsonRPCerror) {
-		// Parameter parsen
+		// parse Parameter
 		var params AddParams
 		if err := req.UnmarshalParams(&params); err != nil {
 			return nil, &rpc.JsonRPCerror{Code: rpc.InvalidParams, Message: rpc.StdError[rpc.InvalidParams]}
 		}
 
-		logger.Logger.Info("Node A verarbeitet Rechner-Anfrage", "peer", p.ID, "user", p.Username(), "a", params.A, "b", params.B)
+		logger.Logger.Info("Node A processes computer request", "peer", p.ID, "user", p.Username(), "a", params.A, "b", params.B)
 		return params.A + params.B, nil
 	})
 
-	// Node A im Hintergrund-Thread starten
+	// Start Node A in the background thread
 	go func() {
 		if err := nodeA.Start(); err != nil {
 			logger.Logger.Error("Node A gestoppt", "err", err)
@@ -54,28 +54,28 @@ func main() {
 	}()
 	defer nodeA.Stop()
 
-	// Warten bis Listener A bereit ist
+	// Wait until Listener A is ready.
 	time.Sleep(100 * time.Millisecond)
 
 	// -------------------------------------------------------------------------
-	// KNOTEN B (Client-Rolle mit Auto-Reconnect Manager)
+	// KNOTEN B (Client-Role with Auto-Reconnect Manager)
 	// -------------------------------------------------------------------------
 	nodeB := rpc.NewNode(rpc.Options{
 		Addr:              "127.0.0.1:8081",
 		HeartbeatInterval: 5 * time.Second,
 	})
 
-	// Node B registriert einen Handler, um Broadcasts zu empfangen
+	// Node B registers a handler to receive broadcasts.
 	nodeB.RegisterHandler("systemAlert", func(p *rpc.Peer, req rpc.JsonRPCrequest) (any, *rpc.JsonRPCerror) {
 		var msg string
 		_ = req.UnmarshalParams(&msg)
 		logger.Logger.Info(">>> Node B hat Broadcast empfangen!", "nachricht", msg)
-		return nil, nil // Notifications erwarten keine Antwort
+		return nil, nil //Notifications do not require a response.
 	})
 
 	go func() {
 		if err := nodeB.Start(); err != nil {
-			logger.Logger.Error("Node B gestoppt", "err", err)
+			logger.Logger.Error("Node B stopped", "err", err)
 		}
 	}()
 	defer nodeB.Stop()
@@ -83,55 +83,55 @@ func main() {
 	time.Sleep(100 * time.Millisecond)
 
 	// -------------------------------------------------------------------------
-	// 1. P2P VERBINDUNGSAUFBAU & AUTHENTIFIZIERUNG (Node B -> Node A)
+	// 1. P2P CONNECTION ESTABLISHMENT & AUTHENTICATION (Node B -> Node A)
 	// -------------------------------------------------------------------------
 	logger.Logger.Info("--> Verbinde Node B autonom mit Node A...")
 
-	// Erzeugt den ManagedClient und startet den Lifecycle im Hintergrund
+	// Creates the ManagedClient and starts the lifecycle in the background.
 	client := nodeB.ConnectWithAutoReconnect("ws://127.0.0.1:8080/ws", rpc.ReconnectConfig{
 		InitialInterval: 1 * time.Second,
 		MaxInterval:     10 * time.Second,
 		MaxRetries:      5,
 	})
 
-	// Credentials für Erst-Login & automatischen Re-Auth hinterlegen
+	// Store credentials for initial login and automatic re-authentication
 	client.SetCredentials("georg", "secret")
 	defer client.Close()
 
-	// Kurze Wartezeit für Erst-Connect & automatische Authentifizierung im Hintergrund
+	// Short wait time for initial connection & automatic background authentication
 	time.Sleep(200 * time.Millisecond)
 
 	// -------------------------------------------------------------------------
-	// 2. SYNCHRONER RPC-CALL ("add") VIA MANAGED CLIENT
+	// 2. SYNCHRONICED RPC-CALL ("add") VIA MANAGED CLIENT
 	// -------------------------------------------------------------------------
-	logger.Logger.Info("--> Führe synchronen client.Call('add') aus...")
+	logger.Logger.Info("--> Execute synchronous client.Call('add')...")
 
-	// Eigener Context für den RPC-Call (Request-Timeout)
+	//Dedicated context for the RPC call (request timeout)
 	callCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	var sum int
 
 	rpcErr := client.Call(callCtx, "add", AddParams{A: 25, B: 17}, &sum)
-	cancel() // Timer-Ressourcen des Contexts freigeben
+	cancel() // Release the context's timer resources.
 
 	if rpcErr != nil {
-		logger.Logger.Error("RPC Call 'add' fehlgeschlagen", "err", rpcErr.Message)
+		logger.Logger.Error("RPC Call 'add' failed", "err", rpcErr.Message)
 	} else {
-		fmt.Printf("\n==========================================")
-		fmt.Printf("\n  Ergebnis vom Remote Call: 25 + 17 = %d", sum)
-		fmt.Printf("\n==========================================\n\n")
+		fmt.Printf("\n============== ========================")
+		fmt.Printf("\n  Ressult of Remote Call: 25 + 17 = %d", sum)
+		fmt.Printf("\n============= =========================\n\n")
 	}
 
 	// -------------------------------------------------------------------------
-	// 3. BROADCAST VOM SERVER AN EINGELOGGTE CLIENTS
+	// 3. BROADCAST FROM SERVER TO LOGGED-IN CLIENTS
 	// -------------------------------------------------------------------------
-	logger.Logger.Info("--> Node A sendet Broadcast an alle angemeldeten Peers...")
-	nodeA.BroadcastAuthorized("systemAlert", "Wartungsarbeiten in 10 Minuten!")
+	logger.Logger.Info("--> Node A sends a broadcast to all registered peers....")
+	nodeA.BroadcastAuthorized("systemAlert", "Maintenance work in 10 minutes!")
 
 	// -------------------------------------------------------------------------
-	// 4. DEMO LAUFEN LASSEN & HEARTBEAT BEOBACHTEN
+	// 4.RUN THE DEMO & MONITOR THE HEARTBEAT
 	// -------------------------------------------------------------------------
-	logger.Logger.Info("--> Demo läuft... Beende in 6 Sekunden (beobachte Logs)")
+	logger.Logger.Info("--> Demo running... Ending in 6 seconds (watch logs)")
 	time.Sleep(6 * time.Second)
 
-	logger.Logger.Info("=== Demo beendet. ===")
+	logger.Logger.Info("=== Demo finished. ===")
 }

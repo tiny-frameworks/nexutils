@@ -24,7 +24,7 @@ const (
 	RoleOutbound
 )
 
-// pendingRequest hält den Rückgabekanal für einen synchronen Call
+// pendingRequest holds the return channel for a synchronous call.
 type pendingRequest struct {
 	done chan JsonRPCresponse
 }
@@ -93,21 +93,21 @@ func (p *Peer) Start() {
 }
 
 func (p *Peer) Close() {
-	// 1. Context abbrechen (signalisiert allen Goroutinen: Peer fährt herunter)
+	// 1. Cancel context (signals to all goroutines: peer is shutting down)
 	if p.cancel != nil {
 		p.cancel()
 	}
 
-	// 2. WebSocket-Verbindung sauber schließen
+	// 2. Cleanly close the WebSocket connection
 	if p.conn != nil {
 		_ = p.conn.Close(websocket.StatusNormalClosure, "closing peer")
 	}
 
-	// 3. Alle schwebenden RPC-Aufrufe sofort abbrechen (Resource Cleanup)
+	// 3. Immediately cancel all pending RPC calls (resource cleanup)
 	p.pendingMu.Lock()
 	for id, req := range p.pending {
-		close(req.done)       // Entsperrt wartende select-Blöcke in peer.Call()
-		delete(p.pending, id) // Räumt die Map auf
+		close(req.done)       // Unblocks waiting select blocks in peer.Call()
+		delete(p.pending, id) // Clear up the map.
 	}
 	p.pendingMu.Unlock()
 
@@ -115,10 +115,10 @@ func (p *Peer) Close() {
 
 // --- Synchrone Call Methode ---
 
-// Call sendet eine Anfrage an den Peer und wartet synchron auf die Antwort.
+// Call sends a request to the peer and waits synchronously for the response.
 func (p *Peer) Call(ctx context.Context, method string, params any, resultTarget any) *JsonRPCerror {
 
-	// 1. Vorab-Check: Steht die Verbindung überhaupt noch?
+	// 1. Preliminary check: Is the connection actually still active?
 	select {
 	case <-p.ctx.Done():
 		return &JsonRPCerror{Code: InternalError, Message: "Peer connection is closed"}
@@ -130,7 +130,7 @@ func (p *Peer) Call(ctx context.Context, method string, params any, resultTarget
 	idStr := fmt.Sprintf("%d", reqID)
 	idRaw := json.RawMessage(idStr)
 
-	// 3. Params marshalfizieren (falls vorhanden)
+	// 3. Marshal params (if present)
 	var rawParams json.RawMessage
 	if params != nil {
 		var err error
@@ -147,23 +147,23 @@ func (p *Peer) Call(ctx context.Context, method string, params any, resultTarget
 		ID:      idRaw,
 	}
 
-	// 4. Pending-Channel registrieren
+	// 4. register Pending-Channel
 	done := make(chan JsonRPCresponse, 1)
 	p.pendingMu.Lock()
 	p.pending[idStr] = &pendingRequest{done: done}
 	p.pendingMu.Unlock()
 
-	// 5. Sicherstellen, dass die Registrierung bei Abbruch/Ende aufgeräumt wird
+	// 5. Ensure that the registration is cleaned up upon cancellation or termination.
 	defer func() {
 		p.pendingMu.Lock()
 		delete(p.pending, idStr)
 		p.pendingMu.Unlock()
 	}()
 
-	// 6. Request absenden
+	// 6. sent Request
 	p.Send(req)
 
-	// 7. Warten auf Antwort oder Context-Timeout
+	// 7. Wait for answer or Context-Timeout
 	select {
 	case <-ctx.Done():
 		return &JsonRPCerror{Code: InternalError, Message: "RPC call timed out or canceled: " + ctx.Err().Error()}
@@ -177,14 +177,14 @@ func (p *Peer) Call(ctx context.Context, method string, params any, resultTarget
 			return resp.Error
 		}
 
-		// 8. Resultat in das Ziel-Objekt unmarshalfizieren
+		// 8. Unmarshal the result into the target object.
 		if resultTarget != nil && resp.Result != nil {
-			// resp.Result Typ 'any' :=> erst in JSON-Bytes wandeln...
+			// resp.Result Typ 'any' :=> first convert to JSON bytes...
 			rawResult, err := json.Marshal(resp.Result)
 			if err != nil {
 				return &JsonRPCerror{Code: ParseError, Message: "Failed to marshal result: " + err.Error()}
 			}
-			// ...und dann unmarshaln
+			// ...and then unmarshal
 			if err := json.Unmarshal(rawResult, resultTarget); err != nil {
 				return &JsonRPCerror{Code: ParseError, Message: "Failed to unmarshal result target: " + err.Error()}
 			}
@@ -213,7 +213,7 @@ func (p *Peer) readLoop() {
 			return
 		}
 
-		// Zuerst versuchen als Response (Antwort auf eigenen Call) zu parsen
+		// First, attempt to parse it as a response (a reply to your own call).
 		var resp JsonRPCresponse
 		if err := json.Unmarshal(rawMsg, &resp); err == nil && resp.ID != nil && resp.Method == "" {
 			idStr := string(resp.ID)
@@ -224,11 +224,11 @@ func (p *Peer) readLoop() {
 
 			if found {
 				pr.done <- resp
-				continue // Erfolgreich gematcht, nicht als Inbound Request verarbeiten!
+				continue // Successfully matched; do not process as an inbound request!
 			}
 		}
 
-		// Falls es keine Response war -> als eingehende Request verarbeiten
+		// If it was not a response -> process as an incoming request.
 		var req JsonRPCrequest
 		if err := json.Unmarshal(rawMsg, &req); err == nil {
 			p.node.requests <- clientRequest{peer: p, req: req}
@@ -306,7 +306,7 @@ func (p *Peer) Username() string {
 	return p.username
 }
 
-// Notify sendet eine Nachricht ohne ID an den Peer (Fire-and-Forget, keine Antwort erwartet).
+// Notify sends a message without an ID to the peer (fire-and-forget; no response expected).
 func (p *Peer) Notify(method string, params any) error {
 	var rawParams json.RawMessage
 	if params != nil {
@@ -317,7 +317,7 @@ func (p *Peer) Notify(method string, params any) error {
 		}
 	}
 
-	// Nachricht OHNE ID ist per JSON-RPC 2.0 Spezifikation ein Notification-Signal
+	// A message without an ID is a notification signal according to the JSON-RPC 2.0 specification.
 	req := JsonRPCrequest{
 		JSONRPC: jsonRPCversion,
 		Method:  method,

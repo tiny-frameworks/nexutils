@@ -28,11 +28,11 @@ type SessionData struct {
 type Router struct {
 	handlers map[string]JsonRPChandler
 
-	// Session Store auf Node-Ebene (für Reconnects)
+	// Session store at the node level (for reconnects)
 	sessionMu sync.RWMutex
 	sessions  map[string]SessionData
 
-	// das abstrahierte Interface
+	// the abstracted interface
 	authenticator UserAuthenticator
 }
 
@@ -46,7 +46,7 @@ func newRouter() *Router {
 	return r
 }
 
-// SetAuthenticator erlaubt das injizieren einer beliebigen User-Verwaltung
+// SetAuthenticator allows the injection of any user management system.
 func (r *Router) SetAuthenticator(auth UserAuthenticator) {
 	if auth != nil {
 		r.authenticator = auth
@@ -95,7 +95,7 @@ func (r *Router) dispatchLoop(nodeCtx contextContext, requests <-chan clientRequ
 // --- Built-in Standard Handlers ---
 
 func (r *Router) registerStandardHandlers() {
-	// 1. Heartbeat Handler mit integriertem Zeit-Sync
+	// 1. Heartbeat handler with integrated time synchronization
 	r.RegisterHandler("heartbeat", func(p *Peer, req JsonRPCrequest) (any, *JsonRPCerror) {
 		return map[string]any{
 			"status": "pong",
@@ -125,7 +125,7 @@ func (r *Router) handleAuth(p *Peer, req JsonRPCrequest) (any, *JsonRPCerror) {
 		return nil, &JsonRPCerror{Code: InvalidParams, Message: StdError[InvalidParams]}
 	}
 
-	// 1. Reconnect via Token (unverändert)
+	// 1. Reconnect via Token
 	if params.Token != "" {
 		r.sessionMu.RLock()
 		sess, found := r.sessions[params.Token]
@@ -149,7 +149,7 @@ func (r *Router) handleAuth(p *Peer, req JsonRPCrequest) (any, *JsonRPCerror) {
 	// 2. Login via Username/Password
 	if params.Username != "" && params.Password != "" {
 
-		// Ruf den angebundenen Provider auf
+		// Access the connected provider.
 		if r.authenticator.Authenticate(p.ctx, params.Username, params.Password) {
 			token := generateToken()
 			ttl := 24 * time.Hour
