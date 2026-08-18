@@ -74,7 +74,11 @@ func (n *Node) Stop() error {
 	ctxShutdown, cancel := context.WithTimeout(context.Background(), n.opts.ShutdownDelay)
 	defer cancel()
 
-	return n.httpServer.Shutdown(ctxShutdown)
+	if n.httpServer != nil {
+		// Falls node reiner Client-Node (keinen Listener/HTTP-Server gestarte)
+		return n.httpServer.Shutdown(ctxShutdown)
+	}
+	return nil
 }
 
 func (n *Node) ConnectToPeer(targetURL string) (*Peer, error) {

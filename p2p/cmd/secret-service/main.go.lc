@@ -1,0 +1,81 @@
+// Copyright 2026 Georg Hagn
+// SPDX-License-Identifier: Apache-2.0
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"codeberg.org/tiny-frameworks/nexutils/logger"
+	"codeberg.org/tiny-frameworks/nexutils/p2p/rpc"
+)
+
+type SecretService struct {
+	client      *rpc.ManagedClient
+	paymentPeer *rpc.Peer
+}
+
+// 1. INITIALISIERUNG
+func (s *SecretService) Setup(ctx context.Context, node *rpc.Node) error {
+	// Handler registrieren
+	node.RegisterHandler("systemAlert", func(p *rpc.Peer, req rpc.JsonRPCrequest) (any, *rpc.JsonRPCerror) {
+		logger.Logger.Info(">>> Broadcast empfangen!")
+		return nil, nil
+	})
+
+	// Verbinden & Auth
+	client, err := node.ConnectWithAutoReconnect("ws://127.0.0.1:8080/ws", rpc.ReconnectConfig{
+		InitialInterval: 1 * time.Second,
+		MaxInterval:     10 * time.Second,
+	})
+	if err != nil {
+		return err
+	}
+	s.client = client
+	s.paymentPeer = client.GetPeer()
+
+	// Auth durchführen
+	var authRes rpc.AuthResult
+	if rpcErr := s.paymentPeer.Call(ctx, "auth", rpc.AuthParams{Username: "georg", Password: "secret"}, &authRes); rpcErr != nil {
+		return fmt.Errorf("auth failed: %s", rpcErr.Message)
+	}
+
+	s.client.SaveSession("georg", authRes.Token)
+	return nil
+}
+
+// 2. ACTION
+func (s *SecretService) Action(ctx context.Context, node *rpc.Node) error {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	var cnt int
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			cnt++
+			orderID := fmt.Sprintf("Order_%d", cnt)
+			var result string
+			_ = s.paymentPeer.Call(ctx, "payment.process", orderID, &result)
+		}
+	}
+}
+
+// 3. CLEAR / TEARDOWN
+func (s *SecretService) Teardown(node *rpc.Node) {
+	if s.client != nil {
+		s.client.Close()
+	}
+	logger.Logger.Info("SecretService sauber beendet.")
+}
+
+func main() {
+	_ = logger.SetupLogging(nil)
+
+	svc := &SecretService{}
+	_ = rpc.RunService(rpc.Options{Addr: "127.0.0.1:8082"}, svc)
+}
