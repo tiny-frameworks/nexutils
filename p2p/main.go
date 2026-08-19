@@ -24,7 +24,7 @@ func main() {
 		log.Fatalf("Logger-Error: %v", err)
 	}
 
-	logger.Logger.Info("=== Starte nexutils/rpc P2P Demo ===")
+	logger.Logger.Info("=== Start nexutils/rpc P2P Demo ===")
 
 	// -------------------------------------------------------------------------
 	// KNOTEN A (Server-Role)
@@ -49,7 +49,7 @@ func main() {
 	// Start Node A in the background thread
 	go func() {
 		if err := nodeA.Start(); err != nil {
-			logger.Logger.Error("Node A gestoppt", "err", err)
+			logger.Logger.Error("Node A stopped", "err", err)
 		}
 	}()
 	defer nodeA.Stop()
@@ -69,7 +69,7 @@ func main() {
 	nodeB.RegisterHandler("systemAlert", func(p *rpc.Peer, req rpc.JsonRPCrequest) (any, *rpc.JsonRPCerror) {
 		var msg string
 		_ = req.UnmarshalParams(&msg)
-		logger.Logger.Info(">>> Node B hat Broadcast empfangen!", "nachricht", msg)
+		logger.Logger.Info(">>> Node B received broadcast!", "Message", msg)
 		return nil, nil //Notifications do not require a response.
 	})
 
@@ -85,7 +85,7 @@ func main() {
 	// -------------------------------------------------------------------------
 	// 1. P2P CONNECTION ESTABLISHMENT & AUTHENTICATION (Node B -> Node A)
 	// -------------------------------------------------------------------------
-	logger.Logger.Info("--> Verbinde Node B autonom mit Node A...")
+	logger.Logger.Info("--> Conncect Node B autonomous with Node A...")
 
 	// Creates the ManagedClient and starts the lifecycle in the background.
 	client := nodeB.ConnectWithAutoReconnect("ws://127.0.0.1:8080/ws", rpc.ReconnectConfig{

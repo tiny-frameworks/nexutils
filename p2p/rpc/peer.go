@@ -125,7 +125,7 @@ func (p *Peer) Call(ctx context.Context, method string, params any, resultTarget
 	default:
 	}
 
-	// 2. Eindeutige ID erzeugen
+	// 2. Create unique ID
 	reqID := atomic.AddUint64(&p.nextID, 1)
 	idStr := fmt.Sprintf("%d", reqID)
 	idRaw := json.RawMessage(idStr)

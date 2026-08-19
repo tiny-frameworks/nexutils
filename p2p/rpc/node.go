@@ -75,7 +75,7 @@ func (n *Node) Stop() error {
 	defer cancel()
 
 	if n.httpServer != nil {
-		// Falls node reiner Client-Node (keinen Listener/HTTP-Server gestarte)
+		// All nodes are pure client nodes (no listener/HTTP server started).
 		return n.httpServer.Shutdown(ctxShutdown)
 	}
 	return nil
@@ -96,7 +96,7 @@ func (n *Node) ConnectToPeer(targetURL string) (*Peer, error) {
 }
 
 func (n *Node) handleWS(w http.ResponseWriter, r *http.Request) {
-	// RemoteAddr aus dem HTTP Request merken
+	// Store the RemoteAddr from the HTTP request.
 	clientAddr := r.RemoteAddr
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{

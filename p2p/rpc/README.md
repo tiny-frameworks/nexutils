@@ -48,14 +48,6 @@ peer.Register("system.alert", func(ctx context.Context, p json.RawMessage) (any,
 
 ```
 
-## Installation (Lokal für Tests)
-
-Um diese Library in einem anderen Projekt zu nutzen, verwende die `replace`-Direktive in deiner `go.mod`:
-
-```bash
-go mod edit -replace tiny-p2p=../path/to/tiny-lib
-
-```
 
 
 
