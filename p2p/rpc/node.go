@@ -86,7 +86,7 @@ func (n *Node) ConnectToPeer(targetURL string) (*Peer, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	conn.SetReadLimit(n.opts.WriteReadLimit)
 	peer := newPeer(n.ctx, conn, RoleOutbound, n, targetURL)
 	n.registerPeer(peer)
 	peer.Start()
@@ -106,6 +106,7 @@ func (n *Node) handleWS(w http.ResponseWriter, r *http.Request) {
 		logger.Logger.Error("Failed to accept websocket connection", "err", err)
 		return
 	}
+	conn.SetReadLimit(n.opts.WriteReadLimit)
 
 	peer := newPeer(n.ctx, conn, RoleInbound, n, clientAddr)
 	n.registerPeer(peer)

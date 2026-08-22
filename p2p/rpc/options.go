@@ -10,12 +10,14 @@ const (
 	defaultAddr              = ":8080"
 	defaultHeartbeatInterval = 15 * time.Second
 	defaultShutdownDelay     = 5 * time.Second
+	defaultWriteReadLimit    = 1024 * 1024
 )
 
 type Options struct {
 	Addr              string
 	HeartbeatInterval time.Duration
 	ShutdownDelay     time.Duration
+	WriteReadLimit    int64
 }
 
 func (o *Options) setDefaults() {
@@ -27,5 +29,8 @@ func (o *Options) setDefaults() {
 	}
 	if o.ShutdownDelay == 0 {
 		o.ShutdownDelay = defaultShutdownDelay
+	}
+	if o.WriteReadLimit == 0 {
+		o.WriteReadLimit = defaultWriteReadLimit
 	}
 }
