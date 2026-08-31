@@ -1,27 +1,24 @@
-
 ## nexutils/p2p
 <sup>the *p2p module*, part of **GSF-nexutils**, member of the **tiny-frameworks** family</sup>
 
 ---
 
-`nexutils/p2p` is a lightweight, high-performance **JSON-RPC 2.0 over WebSocket** package for Go. It is built on top
-of [`github.com/coder/websocket`](https://www.google.com/search?q=https://codeberg.org/coder/websocket) with
-automatic session management, heartbeats, and resilient client control It is specifically designed
+`nexutils/p2p` is a lightweight, high-performance **JSON-RPC 2.0 over WebSocket** package for Go. It is built on top of [`github.com/coder/websocket`](https://codeberg.org/coder/websocket) with
+automatic session management, heartbeats, and resilient client control. It is specifically designed
 for **Peer-to-Peer (P2P)** scenarios and distributed systems.
 
 ---
 
 ## Key Features
 
+* **Delegate-Driven Architecture (`NexDelegate`):** Decoupled, object-oriented lifecycle management and RPC dispatching replacing map-based route handlers.
 * **True Peer Symmetry:** Every node (`Node`) can act simultaneously as a server (incoming connections) and as a client (outgoing connections).
 * **Managed Client Architecture:** Decoupled, stateful auto-reconnect daemon featuring configurable Exponential Backoff & Jitter.
-* **Automatic Re-Authentication:** Seamless fallback mechanism from session tokens to credentials upon server restarts.
 * **Type-Safe JSON-RPC 2.0:** Full support for synchronous method calls (`Call`) and asynchronous one-way events (`Notify`).
 * **Context-Driven:** Full cancellation support and strict request timeouts to prevent goroutine leaks.
 * **Heartbeat & Time Sync:** Integrated liveness check driven by the client role. The receiving peer automatically responds with `pong` and a precise UTC timestamp.
 * **No TLS Overhead in Code:** Designed for secure internal environments or operation behind reverse proxies (e.g., **Caddy**), which handle TLS termination more efficiently.
-* **Decoupled User Authentication:** Pluggable `UserAuthenticator` interface allows integration of any database, LDAP, or custom auth logic.
-* **Structured Errors:** Full integration with `nexutils/errors` (error details are transmitted inside the JSON-RPC `data` field).
+* **Structured Errors:** Full integration with native JSON-RPC error codes and custom business error types.
 
 ---
 
@@ -33,27 +30,33 @@ The package is split into the following core responsibilities:
 
 | Component / File | Responsibility |
 | --- | --- |
-| **`node.go` (`Node`)** | Primary lifecycle manager. Starts/stops the HTTP/WebSocket listener, manages handler registrations, and establishes outgoing connections. |
+| **`node.go` (`Node`)** | Primary lifecycle manager. Starts/stops the HTTP/WebSocket listener, unpacks `Options` to internal fields, and delegates inbound messages/lifecycle events. |
 | **`peer.go` (`Peer`)** | Bipolar WebSocket connection to a remote node. Handles frame processing, pending request matching, authentication state, and heartbeats. |
+| **`delegate.go`** | Defines `NexDelegate` interface and `DefaultNexDelegate` base struct for handling peer validation, requests, notifications, and disconnects. |
 | **`client.go` (`ManagedClient`)** | Resilient auto-reconnect daemon running a state machine (`Connecting` -> `Authenticating` -> `Ready`) for long-lived client connections. |
-| **`router.go`** | Registers RPC methods (`RegisterHandler`), manages session tokens, and dispatches incoming requests (`dispatchLoop`). |
-| **`protocol.go`** | JSON-RPC 2.0 specification (requests, responses, errors) and mapping logic for `nexutils/errors`. |
-| **`options.go`** | Configuration parameters for timeouts, ports, reconnect policies, and heartbeat intervals. |
+| **`protocol.go`** | JSON-RPC 2.0 specification (requests, responses, errors) and standard error definitions. |
+| **`options.go`** | Configuration parameters for timeouts, ports, reconnect policies, and delegate injection. |
 
-### 2. Peer-to-Peer (P2P) Principle
+### 2. Peer-to-Peer (P2P) Principle & Delegate Dispatching
 
-Once the initial WebSocket handshake via HTTP GET is completed, the connection upgrades to the bidirectional WebSocket protocol. From this point forward, there is **no fixed server/client hierarchy**: both peers can asynchronously send and receive JSON-RPC requests.
+Once the initial WebSocket handshake via HTTP GET is completed, the connection upgrades to the bidirectional WebSocket protocol. Inbound requests and lifecycle events bypass message queues and route maps, executing directly via the injected `NexDelegate`.
+
 
 ```
-       [ Node A ]                                      [ Node B ]
+
+```
+    [ Node A ]                                      [ Node B ]
+
+```
+
 (Port :8080 / Server)                           (Port :8081 / Server)
-          ▲                                               │
-          │────── ConnectToPeer("ws://nodeA/ws") ─────────│  (RoleOutbound)
-          │  or ConnectWithAutoReconnect(...)             │
-          │                                               ▼
-          ├─────────────── Request: "auth" ───────────────┤
-          ├─────────────── Request: "heartbeat" ──────────┤ (Ticker)
-          ├─────────────── Request: "customMethod" ───────┤
+▲                                               │
+│────── ConnectToPeer("ws://nodeA/ws") ─────────│  (RoleOutbound)
+│  or ConnectWithAutoReconnect(...)             │
+│                                               ▼
+├─────────────── Request: "auth" ───────────────┤  ──> NexDelegate.OnRequest()
+├─────────────── Request: "heartbeat" ──────────┤  ──> NexDelegate.OnRequest()
+├─────────────── Notify: "event" ───────────────┤  ──> NexDelegate.OnNotification()
 
 ```
 
@@ -75,46 +78,106 @@ import "codeberg.org/tiny-frameworks/nexutils/p2p/rpc"
 
 ## Quickstart & Examples
 
-### 1. Minimal Server (Node)
+### 1. Custom Delegate Implementation
+
+Embed `rpc.DefaultNexDelegate` and override only the lifecycle or request hooks you need:
 
 ```go
 package main
 
 import (
-	"log"
-	"time"
+    "context"
+    "fmt"
+    "log"
 
-	"codeberg.org/tiny-frameworks/nexutils/logger"
-	"codeberg.org/tiny-frameworks/nexutils/p2p/rpc"
+    "codeberg.org/tiny-frameworks/nexutils/p2p/rpc"
 )
 
-func main() {
-	// Initialize logger
-	_ = logger.SetupLogging(nil)
+type MyDelegate struct {
+    rpc.DefaultNexDelegate
+}
 
-	// Create node
-	node := rpc.NewNode(rpc.Options{
-		Addr:              ":8080",
-		HeartbeatInterval: 10 * time.Second,
-	})
+// Peer connection validation (Auth / Filtering)
+func (d *MyDelegate) ValidatePeer(peer *rpc.Peer) bool {
+    log.Printf("Validating peer connection from %s", peer.RemoteAddr())
+    return true
+}
 
-	// Register custom RPC handler
-	node.RegisterHandler("add", func(p *rpc.Peer, req rpc.JsonRPCrequest) (any, *rpc.JsonRPCerror) {
-		// Logic...
-		return map[string]int{"result": 42}, nil
-	})
+func (d *MyDelegate) OnPeerConnected(peer *rpc.Peer) {
+    log.Printf("Peer connected: %s", peer.ID)
+}
 
-	// Start server (blocking)
-	if err := node.Start(); err != nil {
-		log.Fatalf("Node crashed: %v", err)
-	}
+func (d *MyDelegate) OnPeerDisconnected(peer *rpc.Peer, err error) {
+    log.Printf("Peer disconnected: %s (Reason: %v)", peer.ID, err)
+}
+
+// Request & RPC Dispatching
+func (d *MyDelegate) OnRequest(ctx context.Context, peer *rpc.Peer, method string, params []byte) (any, error) {
+    switch method {
+    case "ping":
+        return "pong", nil
+    case "add":
+        return map[string]int{"result": 42}, nil
+    default:
+        // Returns standard MethodNotFound (-32601) JSON-RPC error
+        return d.DefaultNexDelegate.OnRequest(ctx, peer, method, params)
+    }
+}
+
+// One-way notification handler
+func (d *MyDelegate) OnNotification(ctx context.Context, peer *rpc.Peer, method string, params []byte) {
+    log.Printf("Notification received [%s]: %s", method, string(params))
 }
 
 ```
 
 ---
 
-### 2. Managed Client with Auto-Reconnect (Resilient)
+### 2. Minimal Server (Node)
+
+Initialize the server using `rpc.Options`. The options are automatically unpacked into internal `Node` fields upon creation.
+
+```go
+package main
+
+import (
+    "log"
+    "time"
+
+    "codeberg.org/tiny-frameworks/nexutils/logger"
+    "codeberg.org/tiny-frameworks/nexutils/p2p/rpc"
+)
+
+func main() {
+    _ = logger.SetupLogging(nil)
+
+    // Create node with custom delegate
+    node := rpc.NewNode(rpc.Options{
+        Addr:              ":8080",
+        HeartbeatInterval: 10 * time.Second,
+        Delegate:          &MyDelegate{},
+    })
+
+    // Start server (blocking)
+    if err := node.Start(); err != nil {
+        log.Fatalf("Node crashed: %v", err)
+    }
+}
+
+```
+
+### 3. Executable Example
+
+A a complete, runnable end-to-end example (`main.go`) demonstrating two nodes (`Node A` as Server
+and `Node B` as Client) interacting via custom `NexDelegate` implementations:
+
+```go
+go run main.go
+```
+
+---
+
+### 4. Managed Client with Auto-Reconnect (Resilient)
 
 For long-lived client connections that must autonomously survive network outages and remote server restarts:
 
@@ -122,199 +185,74 @@ For long-lived client connections that must autonomously survive network outages
 package main
 
 import (
-	"context"
-	"time"
+    "context"
+    "time"
 
-	"codeberg.org/tiny-frameworks/nexutils/p2p/rpc"
+    "codeberg.org/tiny-frameworks/nexutils/p2p/rpc"
 )
 
 func main() {
-	node := rpc.NewNode(rpc.Options{
-		HeartbeatInterval: 5 * time.Second,
-	})
-	go node.Start()
-	defer node.Stop()
+    node := rpc.NewNode(rpc.Options{
+        HeartbeatInterval: 5 * time.Second,
+        Delegate:          &MyDelegate{},
+    })
+    go node.Start()
+    defer node.Stop()
 
-	// Resilient client with auto-reconnect & re-auth
-	client := node.ConnectWithAutoReconnect("ws://127.0.0.1:8080/ws", rpc.ReconnectConfig{
-		InitialInterval: 1 * time.Second,
-		MaxInterval:     10 * time.Second,
-		MaxRetries:      10,
-	})
-	client.SetCredentials("georg", "secret")
-	defer client.Close()
+    // Resilient client with auto-reconnect
+    client := node.ConnectWithAutoReconnect("ws://127.0.0.1:8080/ws", rpc.ReconnectConfig{
+        InitialInterval: 1 * time.Second,
+        MaxInterval:     10 * time.Second,
+        MaxRetries:      10,
+    })
+    defer client.Close()
 
-	// Synchronous call with an explicit timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
+    // Synchronous call with explicit timeout
+    ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+    defer cancel()
 
-	var response string
-	if err := client.Call(ctx, "payment.process", "Order_123", &response); err != nil {
-		// Error handling (e.g., "client connection is not ready")
-		return
-	}
+    var response string
+    if err := client.Call(ctx, "ping", nil, &response); err != nil {
+        // Error handling
+        return
+    }
 }
 
 ```
 
 ---
 
-### 3. Direct Peer Connection (Static)
+### 5. Direct Peer Connection (Static)
 
 For controlled ad-hoc connections without background management:
 
 ```go
 peer, err := node.ConnectToPeer("ws://127.0.0.1:8080/ws")
 if err != nil {
-	// Connection establishment error
+    // Connection establishment error
 }
 
 ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 defer cancel()
 
 var result string
-if err := peer.Call(ctx, "ping", nil, &result); err != nil {
-	// Static RPC call failed
+if err := peer.Call(ctx, "add", nil, &result); err != nil {
+    // Static RPC call failed
 }
 
 ```
 
 ---
 
-### 4. Custom User Authentication (`UserAuthenticator`)
+## Configuration Options (`Options`)
 
-By default, the system includes a dummy check (`georg` / `secret`). You can attach your custom database or auth logic at any time:
-
-```go
-type MyDatabaseAuth struct {
-	// e.g., db *sql.DB
-}
-
-// Implements rpc.UserAuthenticator
-func (a *MyDatabaseAuth) Authenticate(ctx context.Context, username, password string) bool {
-	// Perform custom DB/hash validation:
-	return username == "admin" && password == "super-secret"
-}
-
-func main() {
-	node := rpc.NewNode(rpc.Options{Addr: ":8080"})
-
-	// Inject custom authenticator
-	node.SetAuthenticator(&MyDatabaseAuth{})
-
-	node.Start()
-}
-
-```
-
----
-
-### 5. Protected RPC Handlers
-
-Inside a handler, simply verify whether the requesting peer is authorized:
-
-```go
-node.RegisterHandler("getSecretData", func(p *rpc.Peer, req rpc.JsonRPCrequest) (any, *rpc.JsonRPCerror) {
-	if !p.IsAuthorized() {
-		return nil, &rpc.JsonRPCerror{
-			Code:    rpc.NotAuthorized,
-			Message: rpc.StdError[rpc.NotAuthorized],
-		}
-	}
-
-	return "Top secret data", nil
-})
-
-```
-
----
-
-## Auth & Reconnect Flow
-
-The protocol supports token-based sessions. This avoids sending passwords repeatedly over the wire during reconnects:
-
-### 1. Initial Login (Username/Password)
-
-* **Request:**
-
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "auth",
-  "params": {"username": "georg", "password": "secret"},
-  "id": 1
-}
-
-```
-
-* **Response:**
-
-```json
-{
-  "jsonrpc": "2.0",
-  "result": {
-    "status": "authenticated",
-    "token": "4f8a1c9e2b...",
-    "username": "georg"
-  },
-  "id": 1
-}
-
-```
-
-### 2. Reconnect After Connection Loss (Token / Auto Re-Auth)
-
-* **Request:**
-
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "auth",
-  "params": {"token": "4f8a1c9e2b..."},
-  "id": 2
-}
-
-```
-
-* **Response:**
-
-```json
-{
-  "jsonrpc": "2.0",
-  "result": {
-    "status": "session restored",
-    "token": "4f8a1c9e2b...",
-    "username": "georg"
-  },
-  "id": 2
-}
-
-```
-
-*(If the remote server restarted and no longer recognizes the session token, the `ManagedClient` automatically falls back to re-authenticating using stored credentials in the background).
-
----
-
-## Heartbeat & Time Sync
-
-The node in the **Client role** (Outbound Peer) automatically transmits a ping at the configured `HeartbeatInterval`:
-
-* **Outbound Peer sends:** `{"jsonrpc": "2.0", "method": "heartbeat", "id": 1690000000}`
-* **Inbound Peer responds:**
-
-```json
-{
-  "jsonrpc": "2.0",
-  "result": {
-    "status": "pong",
-    "time": "2026-07-30T19:18:31.123456789Z"
-  },
-  "id": 1690000000
-}
-
-```
-
-This acts simultaneously as a **liveness check** and enables the client to synchronize its local clock with the server (eliminating the need for a separate `getTime` call).
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `Addr` | `string` | `":8080"` | Listen address for the WebSocket HTTP server. |
+| `HeartbeatInterval` | `time.Duration` | `15s` | Interval for client-side automated ping/heartbeat checks. |
+| `ShutdownDelay` | `time.Duration` | `5s` | Graceful shutdown timeout for the HTTP server. |
+| `WriteReadLimit` | `int64` | `1048576` (1MB) | Maximum allowed frame size in bytes. |
+| `Delegate` | `NexDelegate` | `&DefaultNexDelegate{}` | Delegate interface handling node events and requests. |
 
 ---
 
@@ -332,10 +270,10 @@ go test -v ./...
 ## Organizational & Standards
 
 * **Copyright:** © 2026 Georg Hagn.
-* **Namespace:** `codeberg.org/tiny-frameworks/nexutils/rpc`
+* **Namespace:** `codeberg.org/tiny-frameworks/nexutils/p2p/rpc`
 * **License:** Apache License, Version 2.0.
 
-*GSF-nexutils/rpc is an independent open-source project and is not affiliated with any corporation of a similar name.*
+*GSF-nexutils/p2p is an independent open-source project and is not affiliated with any corporation of a similar name.*
 
 ---
 
@@ -345,3 +283,6 @@ If you have questions or feedback, feel free to reach out:
 
 📧 *georghagn [at] tiny-frameworks.io*
 
+```
+
+```

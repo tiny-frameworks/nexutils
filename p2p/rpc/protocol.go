@@ -6,6 +6,7 @@ package rpc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"codeberg.org/tiny-frameworks/nexutils/errors"
 )
@@ -37,6 +38,11 @@ var StdError = map[int]string{
 	InvalidOrExpired: "Invalid or expired token",
 }
 
+var ErrMethodNotFound = &JsonRPCerror{
+	Code:    MethodNotFound,
+	Message: "Method not found",
+}
+
 type JsonRPCrequest struct {
 	JSONRPC string          `json:"jsonrpc"`
 	Method  string          `json:"method"`
@@ -56,6 +62,10 @@ type JsonRPCresponse struct {
 	Error   *JsonRPCerror   `json:"error,omitempty"`
 	Method  string          `json:"method,omitempty"`
 	ID      json.RawMessage `json:"id,omitempty"`
+}
+
+func (e *JsonRPCerror) Error() string {
+	return fmt.Sprintf("jsonrpc error %d: %s", e.Code, e.Message)
 }
 
 // NewRPCErrorFromNexError converts a nexutils/errors.Error into a JsonRPCerror.

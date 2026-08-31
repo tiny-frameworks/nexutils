@@ -196,8 +196,10 @@ func (p *Peer) Call(ctx context.Context, method string, params any, resultTarget
 // --- Loops ---
 
 func (p *Peer) readLoop() {
+	var readErr error
 	defer func() {
-		p.node.unregisterPeer(p)
+		// Dem Node den genauen Abgrund/Fehler übermitteln, damit das Delegate bescheid weiß
+		p.node.unregisterPeer(p, readErr)
 		p.Close()
 	}()
 
@@ -205,6 +207,7 @@ func (p *Peer) readLoop() {
 		var rawMsg json.RawMessage
 		err := wsjson.Read(p.ctx, p.conn, &rawMsg)
 		if err != nil {
+			readErr = err
 			if websocket.CloseStatus(err) != -1 {
 				logger.Logger.Debug("Peer disconnected normally", "peer", p.ID)
 			} else {
@@ -213,7 +216,7 @@ func (p *Peer) readLoop() {
 			return
 		}
 
-		// First, attempt to parse it as a response (a reply to your own call).
+		// 1. Zuerst prüfen, ob es eine Antwort auf einen unserer eigenen Calls ist
 		var resp JsonRPCresponse
 		if err := json.Unmarshal(rawMsg, &resp); err == nil && resp.ID != nil && resp.Method == "" {
 			idStr := string(resp.ID)
@@ -224,14 +227,15 @@ func (p *Peer) readLoop() {
 
 			if found {
 				pr.done <- resp
-				continue // Successfully matched; do not process as an inbound request!
+				continue // Erfolgreich gematcht -> Nicht als Inbound-Request weiterleiten!
 			}
 		}
 
-		// If it was not a response -> process as an incoming request.
+		// 2. Ansonsten: Als eingehende Nachricht über das Delegate verarbeiten
 		var req JsonRPCrequest
 		if err := json.Unmarshal(rawMsg, &req); err == nil {
-			p.node.requests <- clientRequest{peer: p, req: req}
+			// Nachrichtenverarbeitung direkt über den Node / Delegate-Pipeline
+			p.node.handleIncomingRequest(p.ctx, p, req)
 		}
 	}
 }
@@ -254,7 +258,7 @@ func (p *Peer) writeLoop() {
 }
 
 func (p *Peer) heartbeatLoop() {
-	ticker := time.NewTicker(p.node.opts.HeartbeatInterval)
+	ticker := time.NewTicker(p.node.heartbeatInterval)
 	defer ticker.Stop()
 
 	for {

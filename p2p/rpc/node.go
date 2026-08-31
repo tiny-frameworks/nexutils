@@ -5,8 +5,10 @@ package rpc
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/coder/websocket"
 
@@ -14,37 +16,40 @@ import (
 )
 
 type Node struct {
-	opts       Options
-	router     *Router
+	// Konfiguration (aus Options übernommen)
+	addr              string
+	heartbeatInterval time.Duration
+	shutdownDelay     time.Duration
+	writeReadLimit    int64
+	delegate          NexDelegate
+
+	// Laufzeit-Status
 	httpServer *http.Server
 
-	mu       sync.RWMutex
-	peers    map[*Peer]bool
-	requests chan clientRequest
+	mu    sync.RWMutex
+	peers map[*Peer]bool
 
 	ctx    context.Context
 	cancel context.CancelFunc
 }
 
+// NewNode erstellt einen Node mit den angegebenen Options.
 func NewNode(opts Options) *Node {
 	opts.setDefaults()
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	n := &Node{
-		opts:     opts,
-		router:   newRouter(),
-		peers:    make(map[*Peer]bool),
-		requests: make(chan clientRequest, 64),
-		ctx:      ctx,
-		cancel:   cancel,
+	return &Node{
+		addr:              opts.Addr,
+		heartbeatInterval: opts.HeartbeatInterval,
+		shutdownDelay:     opts.ShutdownDelay,
+		writeReadLimit:    opts.WriteReadLimit,
+		delegate:          opts.Delegate,
+
+		peers:  make(map[*Peer]bool),
+		ctx:    ctx,
+		cancel: cancel,
 	}
-
-	return n
-}
-
-func (n *Node) RegisterHandler(method string, h JsonRPChandler) {
-	n.router.RegisterHandler(method, h)
 }
 
 func (n *Node) Start() error {
@@ -52,13 +57,11 @@ func (n *Node) Start() error {
 	mux.HandleFunc("/ws", n.handleWS)
 
 	n.httpServer = &http.Server{
-		Addr:    n.opts.Addr,
+		Addr:    n.addr,
 		Handler: mux,
 	}
 
-	go n.router.dispatchLoop(n.ctx, n.requests)
-
-	logger.Logger.Info("RPC Node listening for WebSocket connections", "addr", n.opts.Addr)
+	logger.Logger.Info("RPC Node listening for WebSocket connections", "addr", n.addr)
 	return n.httpServer.ListenAndServe()
 }
 
@@ -71,11 +74,10 @@ func (n *Node) Stop() error {
 	}
 	n.mu.Unlock()
 
-	ctxShutdown, cancel := context.WithTimeout(context.Background(), n.opts.ShutdownDelay)
+	ctxShutdown, cancel := context.WithTimeout(context.Background(), n.shutdownDelay)
 	defer cancel()
 
 	if n.httpServer != nil {
-		// All nodes are pure client nodes (no listener/HTTP server started).
 		return n.httpServer.Shutdown(ctxShutdown)
 	}
 	return nil
@@ -86,8 +88,16 @@ func (n *Node) ConnectToPeer(targetURL string) (*Peer, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn.SetReadLimit(n.opts.WriteReadLimit)
+	conn.SetReadLimit(n.writeReadLimit)
+
 	peer := newPeer(n.ctx, conn, RoleOutbound, n, targetURL)
+
+	// Delegate Validierung (z.B. Auth / Outbound Check)
+	if !n.delegate.ValidatePeer(peer) {
+		peer.Close()
+		return nil, errors.New("peer validation failed by delegate")
+	}
+
 	n.registerPeer(peer)
 	peer.Start()
 
@@ -96,7 +106,6 @@ func (n *Node) ConnectToPeer(targetURL string) (*Peer, error) {
 }
 
 func (n *Node) handleWS(w http.ResponseWriter, r *http.Request) {
-	// Store the RemoteAddr from the HTTP request.
 	clientAddr := r.RemoteAddr
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
@@ -106,28 +115,85 @@ func (n *Node) handleWS(w http.ResponseWriter, r *http.Request) {
 		logger.Logger.Error("Failed to accept websocket connection", "err", err)
 		return
 	}
-	conn.SetReadLimit(n.opts.WriteReadLimit)
+	conn.SetReadLimit(n.writeReadLimit)
 
 	peer := newPeer(n.ctx, conn, RoleInbound, n, clientAddr)
+
+	// Delegate Validierung für Inbound Verbindungen
+	if !n.delegate.ValidatePeer(peer) {
+		peer.Close()
+		return
+	}
+
 	n.registerPeer(peer)
 	peer.Start()
 }
 
 func (n *Node) registerPeer(p *Peer) {
 	n.mu.Lock()
-	defer n.mu.Unlock()
 	n.peers[p] = true
+	n.mu.Unlock()
+
+	// Hook bei erfolgreicher Registrierung aufrufen
+	n.delegate.OnPeerConnected(p)
 }
 
-func (n *Node) unregisterPeer(p *Peer) {
+func (n *Node) unregisterPeer(p *Peer, err error) {
 	n.mu.Lock()
-	defer n.mu.Unlock()
-	delete(n.peers, p)
+	_, exists := n.peers[p]
+	if exists {
+		delete(n.peers, p)
+	}
+	n.mu.Unlock()
+
+	if exists {
+		n.delegate.OnPeerDisconnected(p, err)
+	}
 }
 
+// handleIncomingRequest wird vom Peer aufgerufen, wenn ein Frame eintrifft
+func (n *Node) handleIncomingRequest(ctx context.Context, peer *Peer, req JsonRPCrequest) {
+	// Fall 1: Notification (keine ID vorhanden)
+	if req.ID == nil && req.Method != "" {
+		n.delegate.OnNotification(ctx, peer, req.Method, req.Params)
+		return
+	}
+
+	// Fall 2: Request (ID und Methode vorhanden)
+	if req.Method != "" {
+		result, err := n.delegate.OnRequest(ctx, peer, req.Method, req.Params)
+		if err != nil {
+			var rpcErr *JsonRPCerror
+			if !errors.As(err, &rpcErr) {
+				rpcErr = &JsonRPCerror{
+					Code:    InternalError,
+					Message: err.Error(),
+				}
+			}
+
+			n.delegate.OnError(peer, rpcErr)
+
+			peer.Send(JsonRPCresponse{
+				JSONRPC: jsonRPCversion,
+				Error:   rpcErr,
+				ID:      req.ID,
+			})
+			return
+		}
+
+		peer.Send(JsonRPCresponse{
+			JSONRPC: jsonRPCversion,
+			Result:  result,
+			ID:      req.ID,
+		})
+	}
+}
+
+/*
 func (n *Node) SetAuthenticator(auth UserAuthenticator) {
 	n.router.SetAuthenticator(auth)
 }
+*/
 
 // ConnectWithAutoReconnect creates a ManagedClient that autonomously connects,
 // authenticates, and manages reconnections in the background.

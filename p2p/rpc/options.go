@@ -18,6 +18,7 @@ type Options struct {
 	HeartbeatInterval time.Duration
 	ShutdownDelay     time.Duration
 	WriteReadLimit    int64
+	Delegate          NexDelegate
 }
 
 func (o *Options) setDefaults() {
@@ -32,5 +33,8 @@ func (o *Options) setDefaults() {
 	}
 	if o.WriteReadLimit == 0 {
 		o.WriteReadLimit = defaultWriteReadLimit
+	}
+	if o.Delegate == nil {
+		o.Delegate = &DefaultNexDelegate{}
 	}
 }

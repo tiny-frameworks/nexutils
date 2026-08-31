@@ -19,66 +19,77 @@ import (
 
 const paymentAddr = "ws://127.0.0.1:8080/ws"
 
-func main() {
+// -------------------------------------------------------------------------
+// OrderServiceDelegate
+// -------------------------------------------------------------------------
+type OrderServiceDelegate struct {
+	rpc.DefaultNexDelegate
+}
 
-	// SetUp
-	// Graceful Shutdown: activate signal-handling
+func (d *OrderServiceDelegate) OnRequest(ctx context.Context, peer *rpc.Peer, method string, params []byte) (any, error) {
+	switch method {
+	case "order.process":
+		logger.Logger.Info("[Order] Received status update from partner", "params", string(params), "peer", peer.RemoteAddr())
+		return "OK", nil
+
+	default:
+		return d.DefaultNexDelegate.OnRequest(ctx, peer, method, params)
+	}
+}
+
+func (d *OrderServiceDelegate) OnNotification(ctx context.Context, peer *rpc.Peer, method string, params []byte) {
+	if method == "systemAlert" {
+		var msg string
+		_ = json.Unmarshal(params, &msg)
+		logger.Logger.Info("📢 [Order] Broadcast alert received", "msg", msg, "peer", peer.RemoteAddr())
+	}
+}
+
+func main() {
+	// Graceful Shutdown: Signal-Handling aktivieren
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// initialize logger
+	// Logger initialisieren
 	if err := logger.SetupLogging(nil); err != nil {
 		log.Fatalf("Logger-Error: %v", err)
 	}
 
-	// Enriching the logger with context via .With()
 	sysLog := logger.Logger.With("component", "order-service", "role", "client")
 	sysLog.Info("=== Starte nexutils/p2p order-service Demo ===")
 
-	// Application
 	// -------------------------------------------------------------------------
-	// Node order-service (Client & Server at the same time in P2P)
+	// Node order-service (Client & Server zeitgleich mit Delegate)
 	// -------------------------------------------------------------------------
 	orderService := rpc.NewNode(rpc.Options{
 		Addr:              "127.0.0.1:8081",
 		HeartbeatInterval: 5 * time.Second,
-	})
-
-	// Send a system alert message to everyone every 15 seconds.
-	orderService.RegisterHandler("order.process", func(p *rpc.Peer, req rpc.JsonRPCrequest) (any, *rpc.JsonRPCerror) {
-		var params json.RawMessage
-		req.UnmarshalParams(&params)
-		sysLog.Info("[Order] Received status update from partner", "params", string(params), "peer", p.RemoteAddr())
-		return "OK", nil
+		Delegate:          &OrderServiceDelegate{},
 	})
 
 	go func() {
 		if err := orderService.Start(); err != nil {
-			sysLog.Error("orderService stoppt", "err", err)
+			sysLog.Error("orderService gestoppt", "err", err)
 		}
 	}()
 	defer orderService.Stop()
 
-	// Short delay to allow your own node to initialize.
+	// Kurze Pause zur Initialisierung des eigenen Listeners
 	time.Sleep(100 * time.Millisecond)
 
-	// 3.) Static one-off connection (Direct Peer Connection)
-	// Establishes a direct WebSocket connection to a specific peer and returns
-	// a fixed *rpc.Peer handle. If the connection drops, NO automatic
-	// reconnection takes place; subsequent calls will fail.
-	// Ideal for simple, short-lived interactions or controlled ad-hoc connections.
-	// See also: secret-service.go (resilient ManagedClient with auto-reconnect)
+	// Direkte Peer-Verbindung herstellen
 	paymentPeer, err := orderService.ConnectToPeer(paymentAddr)
 	if err != nil {
 		sysLog.Error("Connection error to the payment service", "err", err)
 		return
 	}
 
-	// Active Logic (periodic RPC-Call)
+	// -------------------------------------------------------------------------
+	// Periodische RPC-Call Schleife
+	// -------------------------------------------------------------------------
 	go func() {
 		clientLog := logger.Logger.With("component", "order-service", "role", "client")
-		var cnt int = 0
-		// `Ticker` is often cleaner than `time.After` inside a `for` loop (it prevents memory leaks).
+		var cnt int
 		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 
@@ -92,17 +103,11 @@ func main() {
 				clientLog.Info("[Order] Attempting payment", "orderID", orderID)
 
 				var result string
-
-				// 1. Create a local context that terminates after exactly 3 seconds.
 				callCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 
-				// 2. Pass callCtx (instead of mainCtx) to the peer.
 				rpcErr := paymentPeer.Call(callCtx, "payment.process", orderID, &result)
-
-				// 3. Immediately release the context's timer resources.
 				cancel()
 
-				// Call calls remote "payment.process"
 				if rpcErr != nil {
 					clientLog.Error("[Order] Payment failed – stop worker loop", "rpcErr", rpcErr)
 					stop()
@@ -114,10 +119,8 @@ func main() {
 		}
 	}()
 
-	// Tear Down
-	// Block until Ctrl+C (SIGINT) or SIGTERM is sent
+	// Warten auf Beendigungssignal
 	sysLog.Info("Wait for SIGINT/SIGTERM (mainCtx)...")
 	<-ctx.Done()
 	sysLog.Info("Signal received! Reason:", "err", ctx.Err())
-	orderService.Stop()
 }
