@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -43,8 +44,9 @@ type Peer struct {
 	nextID uint64
 
 	// Sync Call Matching
-	pendingMu sync.Mutex
-	pending   map[string]*pendingRequest
+	pendingMu    sync.Mutex
+	pending      map[string]*pendingRequest
+	pendingBatch map[string]chan []JsonRPCresponse
 
 	// Auth & State
 	mu         sync.RWMutex
@@ -64,15 +66,16 @@ func NewPeer(conn *websocket.Conn, remoteAddr string) *Peer {
 func newPeer(ctx context.Context, conn *websocket.Conn, role PeerRole, node *Node, remoteAddr string) *Peer {
 	pCtx, cancel := context.WithCancel(ctx)
 	return &Peer{
-		ID:         fmt.Sprintf("%p", conn),
-		Role:       role,
-		conn:       conn,
-		remoteAddr: remoteAddr,
-		node:       node,
-		send:       make(chan any, 32),
-		pending:    make(map[string]*pendingRequest),
-		ctx:        pCtx,
-		cancel:     cancel,
+		ID:           fmt.Sprintf("%p", conn),
+		Role:         role,
+		conn:         conn,
+		remoteAddr:   remoteAddr,
+		node:         node,
+		send:         make(chan any, 32),
+		pending:      make(map[string]*pendingRequest),
+		pendingBatch: make(map[string]chan []JsonRPCresponse),
+		ctx:          pCtx,
+		cancel:       cancel,
 	}
 }
 
@@ -198,7 +201,6 @@ func (p *Peer) Call(ctx context.Context, method string, params any, resultTarget
 func (p *Peer) readLoop() {
 	var readErr error
 	defer func() {
-		// Dem Node den genauen Abgrund/Fehler übermitteln, damit das Delegate bescheid weiß
 		p.node.unregisterPeer(p, readErr)
 		p.Close()
 	}()
@@ -216,7 +218,38 @@ func (p *Peer) readLoop() {
 			return
 		}
 
-		// 1. Zuerst prüfen, ob es eine Antwort auf einen unserer eigenen Calls ist
+		// ---------------------------------------------------------------------
+		// FALL 1: Eingehende BATCH-Antwort (JSON-Array, beginnt mit '[')
+		// ---------------------------------------------------------------------
+		if len(rawMsg) > 0 && rawMsg[0] == '[' {
+			var batchResponses []JsonRPCresponse
+			if err := json.Unmarshal(rawMsg, &batchResponses); err == nil && len(batchResponses) > 0 {
+				// Aus einer Sub-ID wie "batch_1_0" die Haupt-ID "batch_1" extrahieren
+				firstID := string(batchResponses[0].ID)
+				// Anführungszeichen entfernen, falls vorhanden
+				if len(firstID) >= 2 && firstID[0] == '"' && firstID[len(firstID)-1] == '"' {
+					firstID = firstID[1 : len(firstID)-1]
+				}
+
+				// Haupt-Batch-ID ermitteln (alles vor dem letzten '_')
+				if idx := strings.LastIndex(firstID, "_"); idx != -1 {
+					batchID := firstID[:idx] // z.B. "batch_1"
+
+					p.pendingMu.Lock()
+					ch, found := p.pendingBatch[batchID]
+					p.pendingMu.Unlock()
+
+					if found {
+						ch <- batchResponses
+						continue // Batch-Antwort erfolgreich verarbeitet
+					}
+				}
+			}
+		}
+
+		// ---------------------------------------------------------------------
+		// FALL 2: Eingehende EINZEL-Antwort (wie bisher)
+		// ---------------------------------------------------------------------
 		var resp JsonRPCresponse
 		if err := json.Unmarshal(rawMsg, &resp); err == nil && resp.ID != nil && resp.Method == "" {
 			idStr := string(resp.ID)
@@ -227,16 +260,14 @@ func (p *Peer) readLoop() {
 
 			if found {
 				pr.done <- resp
-				continue // Erfolgreich gematcht -> Nicht als Inbound-Request weiterleiten!
+				continue // Einzelne Antwort erfolgreich verarbeitet
 			}
 		}
 
-		// 2. Ansonsten: Als eingehende Nachricht über das Delegate verarbeiten
-		var req JsonRPCrequest
-		if err := json.Unmarshal(rawMsg, &req); err == nil {
-			// Nachrichtenverarbeitung direkt über den Node / Delegate-Pipeline
-			p.node.handleIncomingRequest(p.ctx, p, req)
-		}
+		// ---------------------------------------------------------------------
+		// FALL 3: Eingehende Anforderung / Request an diesen Node (Einzeln oder Batch)
+		// ---------------------------------------------------------------------
+		p.node.handleIncomingRawMessage(p.ctx, p, rawMsg)
 	}
 }
 
@@ -277,7 +308,6 @@ func (p *Peer) heartbeatLoop() {
 }
 
 // --- Helper & State ---
-
 func (p *Peer) Send(msg any) {
 	select {
 	case p.send <- msg:
@@ -330,4 +360,146 @@ func (p *Peer) Notify(method string, params any) error {
 
 	p.Send(req)
 	return nil
+}
+
+// BatchItem repräsentiert einen einzelnen Aufruf innerhalb eines Batches
+type BatchItem struct {
+	Method string
+	Params any
+	Result any // Pointer auf Ziel-Struct für das Ergebnis
+}
+
+// CallBatch sendet mehrere RPC-Aufrufe als ein einziges JSON-Array.
+func (p *Peer) CallBatch(ctx context.Context, items []BatchItem) []*JsonRPCerror {
+	if len(items) == 0 {
+		return nil
+	}
+
+	// 1. Vorab-Prüfung: Verbindung aktiv?
+	select {
+	case <-p.ctx.Done():
+		errs := make([]*JsonRPCerror, len(items))
+		for i := range errs {
+			errs[i] = &JsonRPCerror{Code: InternalError, Message: "Peer connection is closed"}
+		}
+		return errs
+	default:
+	}
+
+	// 2. Batch ID generieren (für das Dispatching des gesamten Batch-Response-Arrays)
+	reqID := atomic.AddUint64(&p.nextID, 1)
+	batchIDStr := fmt.Sprintf("batch_%d", reqID)
+
+	// 3. Requests-Array zusammenbauen
+	requests := make([]JsonRPCrequest, 0, len(items))
+	for i, item := range items {
+		var rawParams json.RawMessage
+		if item.Params != nil {
+			var err error
+			rawParams, err = json.Marshal(item.Params)
+			if err != nil {
+				errs := make([]*JsonRPCerror, len(items))
+				errs[i] = &JsonRPCerror{Code: InvalidParams, Message: "Failed to marshal params: " + err.Error()}
+				return errs
+			}
+		}
+
+		// Unter-ID für Zuordnung der einzelnen Antworten, z.B. "batch_1_0"
+		subIDStr := fmt.Sprintf("%s_%d", batchIDStr, i)
+		subIDRaw := json.RawMessage(fmt.Sprintf("%q", subIDStr))
+
+		requests = append(requests, JsonRPCrequest{
+			JSONRPC: jsonRPCversion,
+			Method:  item.Method,
+			Params:  rawParams,
+			ID:      subIDRaw,
+		})
+	}
+
+	// 4. Pending-Channel registrieren (über die Haupt-Batch-ID)
+	done := make(chan []JsonRPCresponse, 1)
+	p.pendingMu.Lock()
+	// Hinweis: pendingBatch hält den Channel für Batch-Antworten
+	p.pendingBatch[batchIDStr] = done
+	p.pendingMu.Unlock()
+
+	defer func() {
+		p.pendingMu.Lock()
+		delete(p.pendingBatch, batchIDStr)
+		p.pendingMu.Unlock()
+	}()
+
+	// 5. Batch-Array als eine Frame-Message senden
+	p.Send(requests)
+
+	// 6. Auf Antwort warten oder Timeout
+	select {
+	case <-ctx.Done():
+		errs := make([]*JsonRPCerror, len(items))
+		for i := range errs {
+			errs[i] = &JsonRPCerror{Code: InternalError, Message: "RPC batch call timed out: " + ctx.Err().Error()}
+		}
+		return errs
+
+	case <-p.ctx.Done():
+		errs := make([]*JsonRPCerror, len(items))
+		for i := range errs {
+			errs[i] = &JsonRPCerror{Code: InternalError, Message: "Peer connection closed during batch call"}
+		}
+		return errs
+
+	case responses, ok := <-done:
+		if !ok {
+			errs := make([]*JsonRPCerror, len(items))
+			for i := range errs {
+				errs[i] = &JsonRPCerror{Code: InternalError, Message: "Batch response channel closed unexpectedly"}
+			}
+			return errs
+		}
+
+		// 7. Antworten den einzelnen BatchItems zuordnen
+		errorsResult := make([]*JsonRPCerror, len(items))
+
+		// Map zur schnellen Zuordnung via Sub-ID ("batch_1_0" -> Response)
+		respMap := make(map[string]JsonRPCresponse, len(responses))
+		for _, resp := range responses {
+			if resp.ID != nil {
+				// ID-String bereinigen (Anführungszeichen entfernen)
+				idStr := string(resp.ID)
+				if len(idStr) >= 2 && idStr[0] == '"' && idStr[len(idStr)-1] == '"' {
+					idStr = idStr[1 : len(idStr)-1]
+				}
+				respMap[idStr] = resp
+			}
+		}
+
+		for i, item := range items {
+			subIDStr := fmt.Sprintf("%s_%d", batchIDStr, i)
+			resp, found := respMap[subIDStr]
+			if !found {
+				errorsResult[i] = &JsonRPCerror{Code: InternalError, Message: "Missing response for batch item"}
+				continue
+			}
+
+			if resp.Error != nil {
+				errorsResult[i] = resp.Error
+				continue
+			}
+
+			// Ergebnis in das Ziel-Objekt unmarshaln
+			if item.Result != nil && resp.Result != nil {
+				rawResult, err := json.Marshal(resp.Result)
+				if err != nil {
+					errorsResult[i] = &JsonRPCerror{Code: ParseError, Message: "Failed to marshal result: " + err.Error()}
+					continue
+				}
+				if err := json.Unmarshal(rawResult, item.Result); err != nil {
+					errorsResult[i] = &JsonRPCerror{Code: ParseError, Message: "Failed to unmarshal result target: " + err.Error()}
+					continue
+				}
+			}
+		}
+
+		return errorsResult
+	}
 }

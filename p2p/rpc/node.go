@@ -5,6 +5,7 @@ package rpc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"sync"
@@ -252,4 +253,74 @@ func (n *Node) BroadcastToUsers(method string, params any, usernames []string) {
 	n.BroadcastFilter(method, params, func(p *Peer) bool {
 		return p.IsAuthorized() && userMap[p.Username()]
 	})
+}
+
+// handleIncomingRawMessage wird aufgerufen, wenn vom Peer ein Frame empfangen wird
+func (n *Node) handleIncomingRawMessage(ctx context.Context, peer *Peer, rawMsg []byte) {
+	// -------------------------------------------------------------------------
+	// FALL 1: Eingehender BATCH-Request (JSON-Array, beginnt mit '[')
+	// -------------------------------------------------------------------------
+	if len(rawMsg) > 0 && rawMsg[0] == '[' {
+		var requests []JsonRPCrequest
+		if err := json.Unmarshal(rawMsg, &requests); err != nil {
+			peer.Send(JsonRPCresponse{
+				JSONRPC: jsonRPCversion,
+				Error:   &JsonRPCerror{Code: ParseError, Message: "Invalid Batch JSON: " + err.Error()},
+			})
+			return
+		}
+
+		responses := make([]JsonRPCresponse, 0, len(requests))
+
+		for _, req := range requests {
+			// Sub-Fall A: Notification im Batch (keine Antwort erzeugen)
+			if req.ID == nil && req.Method != "" {
+				n.delegate.OnNotification(ctx, peer, req.Method, req.Params)
+				continue
+			}
+
+			// Sub-Fall B: Synchroner Request im Batch
+			if req.Method != "" {
+				result, err := n.delegate.OnRequest(ctx, peer, req.Method, req.Params)
+				if err != nil {
+					var rpcErr *JsonRPCerror
+					if !errors.As(err, &rpcErr) {
+						rpcErr = &JsonRPCerror{
+							Code:    InternalError,
+							Message: err.Error(),
+						}
+					}
+
+					n.delegate.OnError(peer, rpcErr)
+
+					responses = append(responses, JsonRPCresponse{
+						JSONRPC: jsonRPCversion,
+						Error:   rpcErr,
+						ID:      req.ID,
+					})
+					continue
+				}
+
+				responses = append(responses, JsonRPCresponse{
+					JSONRPC: jsonRPCversion,
+					Result:  result,
+					ID:      req.ID,
+				})
+			}
+		}
+
+		// Antwort-Array nur senden, wenn mind. ein Request eine Response erfordert
+		if len(responses) > 0 {
+			peer.Send(responses)
+		}
+		return
+	}
+
+	// -------------------------------------------------------------------------
+	// FALL 2: Einzelner Request (wie bisher)
+	// -------------------------------------------------------------------------
+	var singleReq JsonRPCrequest
+	if err := json.Unmarshal(rawMsg, &singleReq); err == nil {
+		n.handleIncomingRequest(ctx, peer, singleReq)
+	}
 }

@@ -42,7 +42,10 @@ func (d *DefaultNexDelegate) OnPeerConnected(peer *Peer)               {}
 func (d *DefaultNexDelegate) OnPeerDisconnected(peer *Peer, err error) {}
 
 func (d *DefaultNexDelegate) OnRequest(ctx context.Context, peer *Peer, method string, params []byte) (any, error) {
-	return nil, ErrUnhandledMethod
+	return nil, &JsonRPCerror{
+		Code:    MethodNotFound,
+		Message: StdError[MethodNotFound],
+	}
 }
 
 func (d *DefaultNexDelegate) OnNotification(ctx context.Context, peer *Peer, method string, params []byte) {

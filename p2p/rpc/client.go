@@ -265,3 +265,16 @@ func (mc *ManagedClient) authenticatePeer(p *Peer) error {
 
 	return fmt.Errorf("authentication failed: no valid token or credentials available")
 }
+
+// CallBatch führt mehrere RPC-Aufrufe als gebündelten Batch über den ManagedClient aus.
+func (mc *ManagedClient) CallBatch(ctx context.Context, items []BatchItem) []*JsonRPCerror {
+	mc.mu.RLock()
+	peer := mc.currentPeer
+	mc.mu.RUnlock()
+
+	if peer == nil {
+		return []*JsonRPCerror{{Code: InternalError, Message: "client connection is not ready"}}
+	}
+
+	return peer.CallBatch(ctx, items)
+}
