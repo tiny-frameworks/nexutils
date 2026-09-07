@@ -4,14 +4,15 @@
 ---
 |[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)| |
 |----|----|
-|![GSF-Suite-Logo](logo-gsf.png)| ***GSF-nexutils***<br>Eine performante, modulare Sammlung essenzieller Go-Utilities für robuste Microservices, CLI-Engines und verteilte Peer-to-Peer-Anwendungen|
+|![GSF-Suite-Logo](logo-gsf.png)| ***GSF-nexutils***<br>Modulare, wiederverwendbare Utilities für Applikationen, Services, Prozess-Engines und verteilte Systeme|
 <sup>***GSF*** steht für ***Go Small Frameworks*** — minimalistische Tools für robuste Applicationen.</sup>
 
 ---
 
-# GSF-nexutils
+## GSF-nexutils
 
-GSF-nexutils ist eine hochperformante, modulare Sammlung essenzieller Go-Utilities, die für robuste Microservices, CLI-Engines und verteilte Peer-to-Peer-Anwendungen entwickelt wurde. Gebaut nach einer strikten **Zero-External-Dependency**-Philosophie (keine externen Abhängigkeiten), bietet es standardisierte Grundlagen für Fehlerbehandlung, Thread-/Prozess-Synchronisation, In-Memory-Caching und strukturiertes Logging.
+GSF-nexutils ist eine Sammlung kleiner, spezialisierter und wiederverwendbarer Go-Komponenten für Applikationen, Services, Prozess-Engines und verteilte Systeme.
+Das Projekt stellt gängige Bausteine ​​für Fehlerbehandlung, Synchronisierung, In-Memory-Caching, strukturiertes Logging und die dazugehörige Infrastruktur bereit.
 
 ---
 
