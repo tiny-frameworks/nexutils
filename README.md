@@ -4,7 +4,7 @@
 ---
 |[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)| |
 |----|----|
-|![GSF-Suite-Logo](logo-gsf.png)| ***GSF-nexutils***<br>Modular, reusable Go utilities for applications, services, processing engines, and distributed systems |
+|![GSF-Suite-Logo](nexutils.png)| ***GSF-nexutils***<br>Modular, reusable Go utilities for applications, services, processing engines, and distributed systems |
 <sup>***GSF*** stands for ***Go Small Frameworks*** — minimalistic tools for robust applications.</sup>
 
 ---
