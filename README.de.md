@@ -5,6 +5,7 @@
 |[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)| |
 |----|----|
 |![GSF-Suite-Logo](nexutils.png)| ***GSF-nexutils***<br>Modulare, wiederverwendbare Utilities für Applikationen, Services, Prozess-Engines und verteilte Systeme|
+
 <sup>***GSF*** steht für ***Go Small Frameworks*** — minimalistische Tools für robuste Applicationen.</sup>
 
 ---
