@@ -4,11 +4,29 @@
 ---
 |[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE)| |
 |----|----|
-|![GSF-Suite-Logo](nexutils.png)| ***GSF-nexutils***<br>Modular, reusable Go utilities for applications, services, processing engines, and distributed systems |
+|![GSF-nexutils-Logo](nexutils.png)| ***GSF-nexutils***<br>Modular, reusable Go utilities for applications, services, processing engines, and distributed systems |
 
 <sup>***GSF*** stands for ***Go Small Frameworks*** — minimalistic tools for robust applications.</sup>
 
 ---
+
+### Repository
+
+This project is developed and maintained on Codeberg.
+
+**Canonical repository:**
+
+> https://codeberg.org/tiny-frameworks/nexutils
+
+GitHub is an automated mirror of the Codeberg repository:
+
+**GitHub mirror:**
+
+> https://github.com/tiny-frameworks/nexutils
+
+---
+
+
 
 ## Overview
 

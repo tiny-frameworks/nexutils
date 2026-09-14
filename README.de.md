@@ -10,6 +10,22 @@
 
 ---
 
+### Repository
+
+Das Projekt wird auf Codeberg entwickelt und gewartet.
+
+**Canonical repository:**
+
+> https://codeberg.org/tiny-frameworks/nexutils
+
+GitHub ist ein automatisierter Mirror des Codeberg Repositories
+
+**GitHub mirror:**
+
+> https://github.com/tiny-frameworks/nexutils
+
+---
+
 ## GSF-nexutils
 
 GSF-nexutils ist eine Sammlung kleiner, spezialisierter und wiederverwendbarer Go-Komponenten für Applikationen, Services, Prozess-Engines und verteilte Systeme.
