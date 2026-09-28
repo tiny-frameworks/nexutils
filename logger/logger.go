@@ -8,14 +8,13 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"codeberg.org/tiny-frameworks/nexutils/errors"
 	"codeberg.org/tiny-frameworks/nexutils/lockingwriter"
 )
 
-// Custom alias for slog.Level
-// and re-export of the familiar log levels as logger constants
 type Level = slog.Level
 
 const (
@@ -26,39 +25,49 @@ const (
 )
 
 type LoggerConfig struct {
-	Filename   string
-	Timeout    time.Duration
-	Expiry     time.Duration
-	UseLocking bool
-	Level      Level
+	Filename   string        `json:"file_name"`
+	Timeout    time.Duration `json:"timeout"`
+	Expiry     time.Duration `json:"expiry"`
+	UseLocking bool          `json:"use_locking"`
+	Level      Level         `json:"level"`
 }
 
-// Global anchor for all nexgate components
-var Logger *slog.Logger = slog.Default()
+var (
+	Logger       *slog.Logger = slog.Default()
+	ConsoleLevel              = new(slog.LevelVar)
+	FileLevel                 = new(slog.LevelVar)
+)
+
+// Dynamische Level-Steuerung zur Laufzeit
+func SetConsoleLevel(l Level) { ConsoleLevel.Set(l) }
+func GetConsoleLevel() Level  { return ConsoleLevel.Level() }
+
+func SetFileLevel(l Level) { FileLevel.Set(l) }
+func GetFileLevel() Level  { return FileLevel.Level() }
 
 func SetupLogging(cfg *LoggerConfig) error {
-
 	if cfg == nil {
 		return nil
 	}
 
-	// Default is consolehandler
-	consoleHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})
-	multiHandler := slog.NewMultiHandler(consoleHandler)
+	// Beide Levels zentral aus Config oder Default setzen
+	ConsoleLevel.Set(cfg.Level)
+	FileLevel.Set(cfg.Level)
 
-	// fileHandler only if cfg.fileName is not nil
+	handlers := make([]slog.Handler, 0, 2)
+
+	consoleHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: ConsoleLevel})
+	handlers = append(handlers, consoleHandler)
+
 	if cfg.Filename != "" {
 		fileHandler, err := newLogHandler(cfg)
-		multiHandler = slog.NewMultiHandler(consoleHandler, fileHandler)
 		if err != nil {
 			return err
 		}
+		handlers = append(handlers, fileHandler)
 	}
 
-	// Combine and put in api
-	Logger = slog.New(multiHandler)
-
-	// Set globally so that third-party libraries can also use slog.
+	Logger = slog.New(slog.NewMultiHandler(handlers...))
 	slog.SetDefault(Logger)
 
 	return nil
@@ -72,8 +81,6 @@ func newLogHandler(cfg *LoggerConfig) (slog.Handler, error) {
 }
 
 func newStandardFileHandler(cfg *LoggerConfig) (slog.Handler, error) {
-
-	// 1. File-Handler (JSON for better evaluation)
 	logfilePath, err := filepath.Abs(cfg.Filename)
 	if err != nil {
 		return nil, errors.Wrap(
@@ -93,11 +100,38 @@ func newStandardFileHandler(cfg *LoggerConfig) (slog.Handler, error) {
 			err,
 		)
 	}
-	return slog.NewJSONHandler(f, &slog.HandlerOptions{Level: cfg.Level}), nil
+
+	return slog.NewJSONHandler(f, &slog.HandlerOptions{Level: FileLevel}), nil
 }
 
 func newLockingFileHandler(cfg *LoggerConfig) (slog.Handler, error) {
-
 	lWriter := lockingwriter.New(cfg.Filename, cfg.Timeout, cfg.Expiry)
-	return slog.NewJSONHandler(lWriter, &slog.HandlerOptions{Level: cfg.Level}), nil
+	return slog.NewJSONHandler(lWriter, &slog.HandlerOptions{Level: FileLevel}), nil
+}
+
+// ParseLevel konvertiert einen String (z.B. "DEBUG", "info", "WARN") in ein slog.Level.
+func ParseLevel(s string) (Level, error) {
+	var l Level
+	err := l.UnmarshalText([]byte(strings.TrimSpace(s)))
+	return l, err
+}
+
+// SetConsoleFromString setzt das Konsolen-Loglevel per String.
+func SetConsoleLevelFromString(s string) error {
+	l, err := ParseLevel(s)
+	if err != nil {
+		return err
+	}
+	SetConsoleLevel(l)
+	return nil
+}
+
+// SetFileLevelFromString setzt das Konsolen-Loglevel per String.
+func SetFileLevelFromString(s string) error {
+	l, err := ParseLevel(s)
+	if err != nil {
+		return err
+	}
+	SetFileLevel(l)
+	return nil
 }

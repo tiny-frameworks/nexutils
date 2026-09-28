@@ -1,3 +1,7 @@
+[![Codeberg Release](https://img.shields.io/codeberg/v/release/tiny-frameworks/nexutils?logo=codeberg&logoColor=white&color=2196F3)](https://codeberg.org/tiny-frameworks/nexutils)
+[![Go Version](https://img.shields.io/badge/Go-1.26%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+
 ## nexutils/p2p
 <sup>the *p2p module*, part of **GSF-nexutils**, member of the **tiny-frameworks** family</sup>
 
@@ -41,11 +45,10 @@ The package is split into the following core responsibilities:
 
 Once the initial WebSocket handshake via HTTP GET is completed, the connection upgrades to the bidirectional WebSocket protocol. Inbound requests and lifecycle events bypass message queues and route maps, executing directly via the injected `NexDelegate`.
 
+```
+│   [ Node A ]                                  │   [ Node B ]
 
 ```
-
-```
-    [ Node A ]                                      [ Node B ]
 
 ```
 

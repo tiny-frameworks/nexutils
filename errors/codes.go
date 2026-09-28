@@ -44,6 +44,7 @@ const (
 	NotYetImplemented Code = "NOT_YET_IMPLEMENTED"
 	InternalError     Code = "INTERNAL_ERROR"
 	Unknown           Code = "UNKNOWN_ERROR"
+	ExecutionError    Code = "EXECUTION_ERROR"
 
 	UnauthorizedError Code = "UNAUTHORIZED_ERROR"
 	//OK            Code = "SUCCESS"
@@ -81,6 +82,7 @@ var exitCodeMap = map[Code]exitInfo{
 	InternalError:     {99, "internal error"},
 	Unknown:           {99, "unknown error"},
 	UnauthorizedError: {99, "not authorized error"},
+	ExecutionError:    {99, "os execution error"},
 }
 
 var AllCodes []Code // AllCodes serves as a reference list for tests and documentation.

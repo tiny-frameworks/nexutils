@@ -317,7 +317,7 @@ func (n *Node) handleIncomingRawMessage(ctx context.Context, peer *Peer, rawMsg 
 	}
 
 	// -------------------------------------------------------------------------
-	// FALL 2: Einzelner Request (wie bisher)
+	// FALL 2: Einzelner Request
 	// -------------------------------------------------------------------------
 	var singleReq JsonRPCrequest
 	if err := json.Unmarshal(rawMsg, &singleReq); err == nil {
