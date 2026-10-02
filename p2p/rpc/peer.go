@@ -15,6 +15,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
+	"codeberg.org/tiny-frameworks/nexutils/errors"
 	"codeberg.org/tiny-frameworks/nexutils/logger"
 )
 
@@ -210,7 +211,7 @@ func (p *Peer) readLoop() {
 		err := wsjson.Read(p.ctx, p.conn, &rawMsg)
 		if err != nil {
 			readErr = err
-			if websocket.CloseStatus(err) != -1 {
+			if websocket.CloseStatus(err) != -1 || errors.Is(err, context.Canceled) {
 				logger.Logger.Debug("Peer disconnected normally", "peer", p.ID)
 			} else {
 				logger.Logger.Error("Read error in peer readLoop", "peer", p.ID, "err", err)
@@ -248,7 +249,7 @@ func (p *Peer) readLoop() {
 		}
 
 		// ---------------------------------------------------------------------
-		// FALL 2: Eingehende EINZEL-Antwort (wie bisher)
+		// FALL 2: Eingehende EINZEL-Antwort
 		// ---------------------------------------------------------------------
 		var resp JsonRPCresponse
 		if err := json.Unmarshal(rawMsg, &resp); err == nil && resp.ID != nil && resp.Method == "" {

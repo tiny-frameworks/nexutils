@@ -6,13 +6,15 @@ package rpc
 import (
 	"context"
 	"encoding/json"
-	"errors"
+
+	//"errors"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 
+	"codeberg.org/tiny-frameworks/nexutils/errors"
 	"codeberg.org/tiny-frameworks/nexutils/logger"
 )
 
@@ -96,7 +98,13 @@ func (n *Node) ConnectToPeer(targetURL string) (*Peer, error) {
 	// Delegate Validierung (z.B. Auth / Outbound Check)
 	if !n.delegate.ValidatePeer(peer) {
 		peer.Close()
-		return nil, errors.New("peer validation failed by delegate")
+		nexErr := errors.New(
+			errors.InternalError,
+			"peer validation failed by delegate",
+			"p2p.rpc.ConnectToPeer",
+		)
+		rpcErr := NewRPCErrorFromNexError(InternalError, nexErr)
+		return nil, rpcErr
 	}
 
 	n.registerPeer(peer)
@@ -166,9 +174,14 @@ func (n *Node) handleIncomingRequest(ctx context.Context, peer *Peer, req JsonRP
 		if err != nil {
 			var rpcErr *JsonRPCerror
 			if !errors.As(err, &rpcErr) {
-				rpcErr = &JsonRPCerror{
-					Code:    InternalError,
-					Message: err.Error(),
+				var nexErr *errors.Error
+				if errors.As(err, &nexErr) {
+					rpcErr = NewRPCErrorFromNexError(InternalError, nexErr)
+				} else {
+					rpcErr = &JsonRPCerror{
+						Code:    InternalError,
+						Message: err.Error(),
+					}
 				}
 			}
 
@@ -285,9 +298,14 @@ func (n *Node) handleIncomingRawMessage(ctx context.Context, peer *Peer, rawMsg 
 				if err != nil {
 					var rpcErr *JsonRPCerror
 					if !errors.As(err, &rpcErr) {
-						rpcErr = &JsonRPCerror{
-							Code:    InternalError,
-							Message: err.Error(),
+						var nexErr *errors.Error
+						if errors.As(err, &nexErr) {
+							rpcErr = NewRPCErrorFromNexError(InternalError, nexErr)
+						} else {
+							rpcErr = &JsonRPCerror{
+								Code:    InternalError,
+								Message: err.Error(),
+							}
 						}
 					}
 

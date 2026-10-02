@@ -5,6 +5,8 @@ package rpc
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 
@@ -15,27 +17,21 @@ const jsonRPCversion = "2.0"
 
 // Standard JSON-RPC 2.0 Error Codes
 const (
+
+	// Standard JSON-RPC 2.0 Codes
 	ParseError     = -32700
 	InvalidRequest = -32600
 	MethodNotFound = -32601
 	InvalidParams  = -32602
 	InternalError  = -32603
-
-	// Custom Business / Auth Errors
-	UnAuthorized     = -32001
-	NotAuthorized    = -32002
-	InvalidOrExpired = -32003
 )
 
 var StdError = map[int]string{
-	ParseError:       "Parse error",
-	InvalidRequest:   "Invalid Request",
-	MethodNotFound:   "Method not found",
-	InvalidParams:    "Invalid params",
-	InternalError:    "Internal error",
-	UnAuthorized:     "Unauthorized",
-	NotAuthorized:    "Not authorized",
-	InvalidOrExpired: "Invalid or expired token",
+	ParseError:     "Parse error",
+	InvalidRequest: "Invalid Request",
+	MethodNotFound: "Method not found",
+	InvalidParams:  "Invalid params",
+	InternalError:  "Internal error",
 }
 
 var ErrMethodNotFound = &JsonRPCerror{
@@ -64,28 +60,16 @@ type JsonRPCresponse struct {
 	ID      json.RawMessage `json:"id,omitempty"`
 }
 
-func (e *JsonRPCerror) Error() string {
-	return fmt.Sprintf("jsonrpc error %d: %s", e.Code, e.Message)
+type AuthParams struct {
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+	Token    string `json:"token,omitempty"`
 }
 
-// NewRPCErrorFromNexError converts a nexutils/errors.Error into a JsonRPCerror.
-// The nexutils error object is cleanly included in the 'Data' field.
-func NewRPCErrorFromNexError(code int, err *errors.Error) *JsonRPCerror {
-	msg := StdError[code]
-	if msg == "" && err != nil {
-		msg = err.Message
-	}
-	return &JsonRPCerror{
-		Code:    code,
-		Message: msg,
-		Data:    err,
-	}
-}
-
-// rawJSONID Helperfunction for IDs
-func rawJSONID(id int64) json.RawMessage {
-	b, _ := json.Marshal(id)
-	return b
+type AuthResult struct {
+	Status   string `json:"status"`
+	Token    string `json:"token,omitempty"`
+	Username string `json:"username,omitempty"`
 }
 
 // UserAuthenticator must be implemented by every user management system.
@@ -97,6 +81,32 @@ type UserAuthenticator interface {
 
 // Default/Fallback Provider (for Demos or Tests)
 type DummyAuthenticator struct{}
+
+func (e *JsonRPCerror) Error() string {
+	return fmt.Sprintf("jsonrpc error %d: %s", e.Code, e.Message)
+}
+
+// NewRPCErrorFromNexError converts a nexutils/errors.Error into a JsonRPCerror.
+// The nexutils error object is cleanly included in the 'Data' field.
+func NewRPCErrorFromNexError(code int, nexErr *errors.Error) *JsonRPCerror {
+
+	msg := StdError[code]
+	if msg == "" && nexErr != nil {
+		msg = nexErr.Message
+	}
+
+	return &JsonRPCerror{
+		Code:    code,
+		Message: msg,
+		Data:    nexErr,
+	}
+}
+
+// rawJSONID Helperfunction for IDs
+func rawJSONID(id int64) json.RawMessage {
+	b, _ := json.Marshal(id)
+	return b
+}
 
 func (d *DummyAuthenticator) Authenticate(ctx context.Context, username, password string) bool {
 	// Maintain standard behavior as long as no actual provider is set.
@@ -115,4 +125,10 @@ func (req *JsonRPCrequest) UnmarshalParams(v any) error {
 		return nil
 	}
 	return json.Unmarshal(req.Params, v)
+}
+
+func generateToken() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }

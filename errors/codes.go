@@ -40,6 +40,14 @@ const (
 	JobStatusError   Code = "JOB_STATUS_ERROR"
 	LockError        Code = "LOCK_ERROR"
 
+	// P2P
+	ValidationError    Code = "VALIDATION_FAILED"
+	NotFoundError      Code = "NOT_FOUND"
+	InvalidOrExpired   Code = "SESSION_TOKEN_FAILED"
+	Forbidden          Code = "FORBIDDEN"
+	ResourceNotFound   Code = "RESOURCE_NOT_FOUND"
+	UnhandledMethodErr Code = "UNHANDLED_METHOD"
+
 	// misc errors and warnings
 	NotYetImplemented Code = "NOT_YET_IMPLEMENTED"
 	InternalError     Code = "INTERNAL_ERROR"
@@ -53,19 +61,26 @@ const (
 // The central registry (private)
 var exitCodeMap = map[Code]exitInfo{
 	MissingField:  {10, "a mandatory field is missing."},
-	InvalidFormat: {10, "The data format is invalid or corrupt."},
+	InvalidFormat: {10, "the data format is invalid or corrupt."},
 
 	AmbiguousValue:        {10, "ambigous value."},
-	NormalizationFailed:   {30, "normalization failed."},
-	IncompleteParty:       {10, "Party [buyer or seller] is incomplete."},
-	PdfContainerError:     {10, "Container for PDF generation not running."},
-	ZugferdContainerError: {10, "Container for ZUGFeRD generation not running."},
-	UnsupportedWriterKind: {10, "Writer-Kind for renderengine not supported."},
+	IncompleteParty:       {10, "party [buyer or seller] is incomplete."},
+	PdfContainerError:     {10, "container for PDF generation not running."},
+	ZugferdContainerError: {10, "container for ZUGFeRD generation not running."},
+	UnsupportedWriterKind: {10, "writer-Kind for renderengine not supported."},
 
 	// Master Validate
-	RuleViolation: {30, "ruleviolation in input."},
-	TotalMismatch: {30, "the expected total differs from input total ."},
-	Inconsistent:  {30, "data is inconsistent."},
+	NormalizationFailed: {20, "normalization failed."},
+	RuleViolation:       {20, "ruleviolation in input."},
+	TotalMismatch:       {20, "the expected total differs from input total ."},
+	Inconsistent:        {20, "data is inconsistent."},
+
+	ValidationError:    {32, "validation failed error"},
+	NotFoundError:      {32, "not found error"},
+	InvalidOrExpired:   {32, "session/token invalid or expired"},
+	Forbidden:          {32, "permission denied"},
+	ResourceNotFound:   {32, "template / profile / attachment not found"},
+	UnhandledMethodErr: {32, "unhandled method"},
 
 	// Render : infrastructure = 40
 	EmptyInput:       {40, "input expected."},
@@ -73,16 +88,17 @@ var exitCodeMap = map[Code]exitInfo{
 	LockError:        {40, "lock file kwrite error."},
 	ReadError:        {40, "read error."},
 	LoEngineError:    {40, "LO engine [loEngine.odt] error."},
-	JavaEngineError:  {40, "Java Engine [mustang-cli,jar] error."},
+	JavaEngineError:  {40, "java engine [mustang-cli,jar] error."},
 	ContainerTimeout: {40, "container [nexgate_lomanager] timeout error."},
-	JobStatusError:   {40, "Jobstatus signalisiert error."},
+	JobStatusError:   {40, "jobstatus signalisiert error."},
 
 	// common : unknow = 99
-	NotYetImplemented: {90, "Not yet implemented, maybe later"},
+	NotYetImplemented: {90, "not yet implemented, maybe later"},
+
 	InternalError:     {99, "internal error"},
 	Unknown:           {99, "unknown error"},
 	UnauthorizedError: {99, "not authorized error"},
-	ExecutionError:    {99, "os execution error"},
+	ExecutionError:    {99, "execution failed"},
 }
 
 var AllCodes []Code // AllCodes serves as a reference list for tests and documentation.
@@ -99,8 +115,8 @@ func init() {
    | ---- | ------------------------ | ------------------------------ |
    | 0    | OK                       | alles valid                    |
    | 10   | Config fehlerhaft        | YAML falsch, Pflichtfeld fehlt |
-   | 20   | Preflight fehlgeschlagen | Java fehlt, Heartbeat stale    |
-   | 30   | Laufzeitfehler           | Merge fehlgeschlagen           |
+   | 20   | MasterInvoice            | Validation, Normlization       |
+   | 32   | nexutils P2P             | node, delegate, peer           |
    | 40   | Infrastruktur            | Timeout, IO Crash              |
    | 90   | Implementierung          | NotYetImplemented              |
    | 99   | Unbekannt                | Panic                          |

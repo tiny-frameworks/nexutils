@@ -36,7 +36,7 @@ The package is split into the following core responsibilities:
 | --- | --- |
 | **`node.go` (`Node`)** | Primary lifecycle manager. Starts/stops the HTTP/WebSocket listener, unpacks `Options` to internal fields, and delegates inbound messages/lifecycle events. |
 | **`peer.go` (`Peer`)** | Bipolar WebSocket connection to a remote node. Handles frame processing, pending request matching, authentication state, and heartbeats. |
-| **`delegate.go`** | Defines `NexDelegate` interface and `DefaultNexDelegate` base struct for handling peer validation, requests, notifications, and disconnects. |
+| **`delegate.go`** | Defines `NexDelegate` interface, `UserAuthenticator` interface, and `DefaultNexDelegate` base struct for handling peer validation, requests, notifications, and disconnects. Manages built-in `"auth"` requests and in-memory token `SessionStore` for reconnects. |
 | **`client.go` (`ManagedClient`)** | Resilient auto-reconnect daemon running a state machine (`Connecting` -> `Authenticating` -> `Ready`) for long-lived client connections. |
 | **`protocol.go`** | JSON-RPC 2.0 specification (requests, responses, errors) and standard error definitions. |
 | **`options.go`** | Configuration parameters for timeouts, ports, reconnect policies, and delegate injection. |
@@ -136,7 +136,37 @@ func (d *MyDelegate) OnNotification(ctx context.Context, peer *rpc.Peer, method 
 
 ---
 
-### 2. Minimal Server (Node)
+### 2. Authentication & Session Management
+
+`DefaultNexDelegate` provides built-in handling for the `"auth"` RPC method using token-based sessions:
+
+1. **Injecting an Authenticator**: Inject a custom `UserAuthenticator` into your delegate or `Node`. If omitted, a `DummyAuthenticator` (`georg`/`secret`) is used as a fallback.
+   ```go
+   myDelegate := &MyDelegate{}
+   myDelegate.SetAuthenticator(myUserStore) // Implements rpc.UserAuthenticator
+
+
+2. **Protecting RPC Methods**: Secure your business endpoints using `peer.IsAuthorized()` and retrieve identity via `peer.Username()`:
+
+```go
+func (d *MyDelegate) OnRequest(ctx context.Context, peer *rpc.Peer, method string, params []byte) (any, error) {
+    switch method {
+    case "protected.action":
+        if !peer.IsAuthorized() {
+            return nil, &rpc.JsonRPCerror{Code: rpc.UnAuthorized, Message: rpc.StdError[rpc.UnAuthorized]}
+        }
+        log.Printf("Action executed by %s", peer.Username())
+        return "ok", nil
+    default:
+        return d.DefaultNexDelegate.OnRequest(ctx, peer, method, params)
+    }
+}
+```
+
+
+---
+
+### 3. Minimal Server (Node)
 
 Initialize the server using `rpc.Options`. The options are automatically unpacked into internal `Node` fields upon creation.
 
@@ -169,7 +199,7 @@ func main() {
 
 ```
 
-### 3. Executable Example
+### 4. Executable Example
 
 A a complete, runnable end-to-end example (`main.go`) demonstrating two nodes (`Node A` as Server
 and `Node B` as Client) interacting via custom `NexDelegate` implementations:
@@ -180,7 +210,7 @@ go run main.go
 
 ---
 
-### 4. Managed Client with Auto-Reconnect (Resilient)
+### 5. Managed Client with Auto-Reconnect (Resilient)
 
 For long-lived client connections that must autonomously survive network outages and remote server restarts:
 
@@ -210,6 +240,9 @@ func main() {
     })
     defer client.Close()
 
+    //Set credentials for automated auth & token-based session restoration on reconnects
+    client.SetCredentials("admin", "secret")
+
     // Synchronous call with explicit timeout
     ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
     defer cancel()
@@ -225,7 +258,7 @@ func main() {
 
 ---
 
-### 5. Direct Peer Connection (Static)
+### 6. Direct Peer Connection (Static)
 
 For controlled ad-hoc connections without background management:
 

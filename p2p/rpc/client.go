@@ -217,7 +217,6 @@ func (mc *ManagedClient) authenticatePeer(p *Peer) error {
 	user, pass, token := mc.username, mc.password, mc.token
 	mc.mu.RUnlock()
 
-	// 1. If no authentication data is present at all -> Pass through immediately.
 	if user == "" && pass == "" && token == "" {
 		return nil
 	}
@@ -227,38 +226,49 @@ func (mc *ManagedClient) authenticatePeer(p *Peer) error {
 
 	var authRes AuthResult
 
-	// --- STEP A: Attempt with existing token ---
+	// --- SCHRITT A: Re-Authentifizierung mit vorhandenem Token ---
 	if token != "" {
-		rpcErr := p.Call(ctx, "auth", AuthParams{Token: token}, &authRes)
+		rpcErr := p.Call(ctx, "system.auth", AuthParams{Token: token}, &authRes)
 		if rpcErr == nil && authRes.Token != "" {
-			// The token was still valid!
+			// Erfolgreich via Token!
 			mc.mu.Lock()
 			mc.token = authRes.Token
 			mc.mu.Unlock()
+
+			// Fallback to mc.username, if authRes.Username was empty
+			resolvedUser := authRes.Username
+			if resolvedUser == "" {
+				resolvedUser = user
+			}
+
+			// Auth-State am clientseitigen Peer nachziehen
+			p.SetAuth(authRes.Username, authRes.Token, 24*time.Hour)
+
 			logger.Logger.Info("Token re-authentication successful!", "peer", p.ID)
 			return nil
 		}
 
-		// Token was invalid or expired!
 		logger.Logger.Warn("Token invalid or expired. Resetting token and retrying with credentials...", "peer", p.ID)
 
-		// Delete the token so that future attempts are clean.
 		mc.mu.Lock()
 		mc.token = ""
 		mc.mu.Unlock()
 	}
 
-	// --- STEP B: Initial authentication or fallback using username and password ---
+	// --- SCHRITT B: Erst-Anmeldung via Username & Passwort ---
 	if user != "" && pass != "" {
-		rpcErr := p.Call(ctx, "auth", AuthParams{Username: user, Password: pass}, &authRes)
+		rpcErr := p.Call(ctx, "system.auth", AuthParams{Username: user, Password: pass}, &authRes)
 		if rpcErr != nil {
 			return fmt.Errorf("credential auth failed: %s", rpcErr.Message)
 		}
 
-		// Save new token for future reconnects
 		mc.mu.Lock()
 		mc.token = authRes.Token
 		mc.mu.Unlock()
+
+		// Auth-State am clientseitigen Peer setzen
+		p.SetAuth(authRes.Username, authRes.Token, 24*time.Hour)
+
 		logger.Logger.Info("Credential authentication successful! Saved new token.", "peer", p.ID)
 		return nil
 	}
